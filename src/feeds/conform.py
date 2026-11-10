@@ -2,24 +2,29 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Sequence
 from typing import Any
 
 _BOOLEANS = frozenset({"true", "false"})
+# Strict forms: no underscores, no surrounding whitespace (polars' i64/f64 parse, atlas TBL000).
+_INTEGER = re.compile(r"[+-]?[0-9]+")
+_NUMBER = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+_NON_FINITE = frozenset({"nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"})
 
 
 def _problem(kind: str, cell: str) -> str | None:
     if kind == "integer":
-        try:
-            int(cell)
-        except ValueError:
+        if not _INTEGER.fullmatch(cell):
             return "is not an integer"
     elif kind == "number":
-        try:
-            float(cell)
-        except ValueError:
+        if cell.lower() in _NON_FINITE:
+            return "is not finite"
+        if not _NUMBER.fullmatch(cell):
             return "is not a number"
+        if not math.isfinite(float(cell)):
+            return "is not finite"
     elif kind == "boolean" and cell not in _BOOLEANS:
         return "is not 'true' or 'false'"
     return None
@@ -37,17 +42,16 @@ def check_table(
     names = [f["name"] for f in fields]
     if list(columns) != names:
         return [f"header {list(columns)} differs from the schema's {names}"]
-    missing = set(table_schema.get("missingValues", [""]))
+    missing = set(table_schema.get("missingValues", [""]))  # only the literal "", never " "
     gene_column = table_schema.get("geneColumn")
     errors: list[str] = []
     for number, row in enumerate(rows, start=1):
         if len(row) != len(names):
             errors.append(f"row {number}: {len(row)} cells, expected {len(names)}")
             continue
-        for field, cell in zip(fields, row, strict=True):
+        for field, cell in zip(fields, row, strict=False):
             name, rules = field["name"], field.get("constraints", {})
-            text = "" if cell is None else cell.strip()
-            if text in missing or cell is None:
+            if cell is None or cell in missing:
                 if rules.get("required"):
                     errors.append(f"row {number}, column '{name}': required but empty")
                 continue

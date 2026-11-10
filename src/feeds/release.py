@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shlex
 import subprocess
 import tempfile
 from collections.abc import Callable, Sequence
@@ -43,6 +44,9 @@ def publish(
             f"dist differs from the manifest: unexpected {sorted(present - expected)}, "
             f"missing {sorted(expected - present)}"
         )
+    for entry in manifest["tables"]:
+        if _sha(dist / entry["file"]) != entry["sha256"]:
+            raise ReleaseRefused(f"{entry['file']} does not match the manifest's sha256")
     runner(["git", "fetch", "origin", "dev"])
     branches = [
         b.strip() for b in runner(["git", "branch", "-r", "--contains", commit]).splitlines()
@@ -52,7 +56,9 @@ def publish(
     try:
         runner(["gh", "release", "view", tag, "-R", repo])
         exists = True
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as exc:
+        if "release not found" not in f"{exc.stderr or ''}{exc.output or ''}":
+            raise
         exists = False
     if exists:
         with tempfile.TemporaryDirectory() as tmp:
@@ -69,7 +75,7 @@ def publish(
         "--title", tag, "--notes", f"Source package {tag}.", *assets,
     ]  # fmt: skip
     if dry_run:
-        line = "dry-run: " + " ".join(command)
+        line = "dry-run: " + shlex.join(command)
         print(line)
         return line
     runner(command)

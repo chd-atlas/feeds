@@ -11,6 +11,8 @@ import hashlib
 import io
 import json
 import re
+import shutil
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,7 +57,12 @@ def _encode(table: TableOut) -> bytes:
                     "(the atlas refuses it as ING015)"
                 )
         lines.append("\t".join("" if cell is None else cell for cell in row))
-    raw = ("\n".join(lines) + "\n").encode("utf-8")
+    try:
+        raw = ("\n".join(lines) + "\n").encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise PackageRefused(
+            f"table '{table.name}' holds text that is not valid UTF-8: {exc}"
+        ) from exc
     buffer = io.BytesIO()
     with gzip.GzipFile(filename="", mode="wb", fileobj=buffer, mtime=0) as handle:
         handle.write(raw)
@@ -87,6 +94,12 @@ def write_package(
         raise PackageRefused(f"version '{version}' is not a valid path segment")
     if out_dir.exists() and (not out_dir.is_dir() or any(out_dir.iterdir())):
         raise PackageRefused(f"{out_dir} exists and is not empty; never mix two packages")
+    if not licence_evidence.strip():
+        raise PackageRefused("licence_evidence must not be blank")
+    names = [t.name for t in tables]
+    repeated = sorted({n for n in names if names.count(n) > 1})
+    if repeated:
+        raise PackageRefused(f"table names repeated: {', '.join(repeated)}")
     entries: list[dict[str, Any]] = []
     blobs: dict[str, bytes] = {}
     for table in tables:
@@ -101,14 +114,32 @@ def write_package(
                 f"table '{table.name}': gene_column {table.gene_column!r} differs from the "
                 f"schema's {schema.get('geneColumn')!r}"
             )
+        layout = schema.get("layout", {})
+        if "sharded" in layout and table.shard is None:
+            raise PackageRefused(f"table '{table.name}' is sharded and gives no shard")
+        if "flat" in layout and table.shard is not None:
+            raise PackageRefused(f"table '{table.name}' is flat and gives a shard")
+        source_column = schema.get("sourceColumn")
+        if source_column is not None:
+            at_source = table.columns.index(source_column) if source_column in table.columns else -1
+            foreign = sorted(
+                {
+                    repr(row[at_source])
+                    for row in table.rows
+                    if at_source >= 0 and row[at_source] != package
+                }
+            )
+            if foreign:
+                raise PackageRefused(
+                    f"table '{table.name}' has rows whose {source_column} is not '{package}': "
+                    f"{foreign[:5]}"
+                )
         errors = check_table(table.columns, table.rows, schema, ids=ids)
         if errors:
             shown = "; ".join(errors[:5])
             raise PackageRefused(f"table '{table.name}' does not conform ({len(errors)}): {shown}")
         blob = _encode(table)
         file = f"{table.name}.{table.shard}.tsv.gz" if table.shard else f"{table.name}.tsv.gz"
-        if file in blobs:
-            raise PackageRefused(f"two tables would write {file}")
         blobs[file] = blob
         genes: int | None = None
         if table.gene_column is not None:
@@ -126,6 +157,7 @@ def write_package(
         if table.shard is not None:
             entry["shard"] = table.shard
         entries.append(entry)
+    entries.sort(key=lambda e: (e["name"], e.get("shard") or ""))
     manifest: dict[str, Any] = {
         "package": package,
         "version": version,
@@ -144,14 +176,26 @@ def write_package(
         manifest_schema, default=jsonschema.Draft202012Validator
     )
     problems = sorted(
-        validator_class(manifest_schema).iter_errors(manifest), key=lambda e: list(e.path)
+        validator_class(manifest_schema, format_checker=validator_class.FORMAT_CHECKER).iter_errors(
+            manifest
+        ),
+        key=lambda e: list(e.path),
     )
     if problems:
         shown = "; ".join(f"{'/'.join(map(str, e.path))}: {e.message}" for e in problems[:5])
         raise PackageRefused(f"manifest does not satisfy the atlas's schema: {shown}")
-    text = json.dumps(manifest, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for file, blob in blobs.items():
-        (out_dir / file).write_bytes(blob)
-    (out_dir / "manifest.json").write_text(text, encoding="utf-8")
+    try:
+        text = (json.dumps(manifest, sort_keys=True, indent=2, ensure_ascii=False) + "\n").encode()
+    except UnicodeEncodeError as exc:
+        raise PackageRefused(f"manifest holds text that is not valid UTF-8: {exc}") from exc
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{out_dir.name}.", dir=out_dir.parent))
+    try:
+        for file, blob in blobs.items():
+            (staging / file).write_bytes(blob)
+        (staging / "manifest.json").write_bytes(text)
+        staging.replace(out_dir)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
     return out_dir

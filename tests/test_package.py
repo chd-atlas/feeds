@@ -54,18 +54,89 @@ def test_genes_counts_distinct_stripped_non_empty_values(out: Path) -> None:
     assert json.loads((out / "manifest.json").read_text())["tables"][0]["genes"] == 2
 
 
-def test_a_shard_names_its_file_and_a_bad_shard_or_version_is_refused(tmp_path: Path) -> None:
-    kw = package_kwargs(
-        [TableOut("burden", 1, tuple(BURDEN_COLUMNS), [burden_row("TBX5")], "gene", "s1")]
+def _quantiles(shard: str | None) -> TableOut:
+    cols = ("dataset", "tissue", "stage", "percentile", "value", "unit", "n_genes")
+    return TableOut(
+        "profile_quantiles",
+        1,
+        cols,
+        [["d", "heart", "4wpc", "50", "1.5", "tpm", "10"]],
+        None,
+        shard,
     )
-    write_package(tmp_path / "ok", **kw)
-    assert (tmp_path / "ok" / "burden.s1.tsv.gz").is_file()
-    bad = TableOut("burden", 1, tuple(BURDEN_COLUMNS), [burden_row("TBX5")], "gene", "..")
+
+
+def test_a_shard_names_its_file_and_layout_mismatches_are_refused(tmp_path: Path) -> None:
+    write_package(tmp_path / "ok", **package_kwargs([_quantiles("s1")]))
+    assert (tmp_path / "ok" / "profile_quantiles.s1.tsv.gz").is_file()
+    with pytest.raises(PackageRefused, match="sharded and gives no shard"):
+        write_package(tmp_path / "a", **package_kwargs([_quantiles(None)]))
+    flat = TableOut("burden", 1, tuple(BURDEN_COLUMNS), [burden_row("TBX5")], "gene", "s1")
+    with pytest.raises(PackageRefused, match="flat and gives a shard"):
+        write_package(tmp_path / "b", **package_kwargs([flat]))
     with pytest.raises(PackageRefused):
-        write_package(tmp_path / "x", **package_kwargs([bad]))
+        write_package(tmp_path / "c", **package_kwargs([_quantiles("..")]))
     with pytest.raises(PackageRefused):
-        write_package(tmp_path / "y", **{**package_kwargs(), "version": ".."})
-    assert not (tmp_path / "x").exists() and not (tmp_path / "y").exists()
+        write_package(tmp_path / "d", **{**package_kwargs(), "version": ".."})
+    assert [p.name for p in tmp_path.iterdir()] == ["ok"]
+
+
+def test_every_row_of_a_source_column_must_name_the_package_exactly(tmp_path: Path) -> None:
+    for bad in ["other", "demo ", None]:
+        rows = [burden_row("TBX5"), burden_row("GATA4", source=bad)]
+        with pytest.raises(PackageRefused, match="source"):
+            write_package(tmp_path / "x", **package_kwargs([burden_table(rows)]))
+    assert not (tmp_path / "x").exists()
+
+
+def test_the_manifest_is_held_to_what_the_atlas_model_refuses(tmp_path: Path) -> None:
+    kw = package_kwargs()
+    dated = [{**kw["inputs"][0], "retrieved_on": d} for d in ("not-a-date", "2026-02-30")]
+    for inputs in ([dated[0]], [dated[1]]):
+        with pytest.raises(PackageRefused, match="manifest"):
+            write_package(tmp_path / "d", **{**kw, "inputs": inputs})
+    with pytest.raises(PackageRefused, match="repeated"):
+        write_package(tmp_path / "e", **package_kwargs([burden_table(), burden_table()]))
+    for blank in ["", "  \n"]:
+        with pytest.raises(PackageRefused, match="blank"):
+            write_package(tmp_path / "f", **{**kw, "licence_evidence": blank})
+    assert not any(tmp_path.iterdir())
+
+
+def test_an_unknown_table_and_unencodable_text_are_refused(tmp_path: Path) -> None:
+    ghost = TableOut("nosuch", 1, ("a",), [["x"]], None)
+    with pytest.raises(PackageRefused, match="no vendored schema"):
+        write_package(tmp_path / "a", **package_kwargs([ghost]))
+    rows = [burden_row("TBX5", method_note="bad\ud800")]
+    with pytest.raises(PackageRefused, match="UTF-8"):
+        write_package(tmp_path / "b", **package_kwargs([burden_table(rows)]))
+    with pytest.raises(PackageRefused, match="UTF-8"):
+        write_package(tmp_path / "c", **{**package_kwargs(), "licence_evidence": "x\ud800"})
+    assert not any(tmp_path.iterdir())
+
+
+def test_the_write_is_atomic_and_the_manifest_order_ignores_the_callers(tmp_path: Path) -> None:
+    tables = [_quantiles("b"), burden_table()]
+    write_package(tmp_path / "x", **package_kwargs(tables))
+    write_package(tmp_path / "y", **package_kwargs(tables[::-1]))
+    assert _bytes(tmp_path / "x") == _bytes(tmp_path / "y")
+    listed = [
+        (t["name"], t.get("shard"))
+        for t in json.loads((tmp_path / "x/manifest.json").read_text())["tables"]
+    ]
+    assert listed == [("burden", None), ("profile_quantiles", "b")]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["x", "y"]  # no staging directory left
+    (tmp_path / "pre").mkdir()
+    write_package(tmp_path / "pre", **package_kwargs())  # an existing empty directory is fine
+    assert (tmp_path / "pre" / "manifest.json").is_file()
+
+
+def test_the_version_pattern_equals_the_vendored_manifest_schema() -> None:
+    from feeds.package import VENDORED
+    from feeds.version import SEGMENT
+
+    schema = json.loads((VENDORED / "package_manifest.schema.json").read_text())
+    assert schema["properties"]["version"]["pattern"] == SEGMENT
 
 
 def test_the_writer_refuses_a_wrong_gene_column_a_bad_manifest_and_a_used_directory(
@@ -75,7 +146,7 @@ def test_the_writer_refuses_a_wrong_gene_column_a_bad_manifest_and_a_used_direct
     with pytest.raises(PackageRefused, match="gene_column"):
         write_package(tmp_path / "a", **package_kwargs([wrong]))
     with pytest.raises(PackageRefused, match="manifest"):
-        write_package(tmp_path / "b", **{**package_kwargs(), "licence_evidence": ""})
+        write_package(tmp_path / "b", **{**package_kwargs(), "ids": "bogus"})
     used = tmp_path / "c"
     used.mkdir()
     (used / "stale").write_text("x")

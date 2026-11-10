@@ -15,16 +15,29 @@ COMMIT = "b" * 40
 
 
 class Fake:
-    def __init__(self, *, on_dev: bool = True, release_dir: Path | None = None) -> None:
-        self.on_dev, self.release_dir, self.calls = on_dev, release_dir, []  # type: ignore[var-annotated]
+    def __init__(
+        self,
+        *,
+        branches: str | None = None,
+        view_error: str | None = None,
+        release_dir: Path | None = None,
+    ) -> None:
+        self.branches, self.view_error, self.release_dir, self.calls = (
+            branches,
+            view_error,
+            release_dir,
+            [],
+        )  # type: ignore[var-annotated]
 
     def __call__(self, command: Sequence[str]) -> str:
         self.calls.append(list(command))
         if command[:2] == ["git", "branch"]:
-            return "  origin/dev\n" if self.on_dev else "  origin/other\n"
+            return self.branches if self.branches is not None else "  origin/dev\n"
         if command[:3] == ["gh", "release", "view"]:
+            if self.view_error is not None:
+                raise subprocess.CalledProcessError(1, command, stderr=self.view_error)
             if self.release_dir is None:
-                raise subprocess.CalledProcessError(1, command)
+                raise subprocess.CalledProcessError(1, command, stderr="release not found")
             return ""
         if command[:3] == ["gh", "release", "download"]:
             assert self.release_dir is not None
@@ -46,7 +59,7 @@ def _digest(directory: Path) -> dict[str, str]:
 def test_release_refuses_an_unpushed_recipe_commit_and_a_changed_tag(
     dist: Path, tmp_path: Path
 ) -> None:
-    fake = Fake(on_dev=False)
+    fake = Fake(branches="  origin/dev-old\n  origin/other\n")
     with pytest.raises(ReleaseRefused, match="origin/dev"):
         publish(dist, dry_run=False, runner=fake)
     assert not any(c[:3] == ["gh", "release", "create"] for c in fake.calls)
@@ -92,3 +105,27 @@ def test_release_refuses_a_dist_with_a_stray_or_missing_file(dist: Path) -> None
     (dist / "burden.tsv.gz").unlink()
     with pytest.raises(ReleaseRefused, match="burden.tsv.gz"):
         publish(dist, runner=Fake())
+
+
+def test_only_a_not_found_view_means_no_release(dist: Path) -> None:
+    fake = Fake(view_error="HTTP 401: Bad credentials")
+    with pytest.raises(subprocess.CalledProcessError):
+        publish(dist, dry_run=False, runner=fake)
+    assert not any(c[:3] == ["gh", "release", "create"] for c in fake.calls)
+
+
+def test_release_refuses_a_file_that_no_longer_matches_the_manifest_even_in_a_dry_run(
+    dist: Path,
+) -> None:
+    (dist / "burden.tsv.gz").write_bytes(b"tampered")
+    fake = Fake()
+    with pytest.raises(ReleaseRefused, match="sha256"):
+        publish(dist, runner=fake)
+    assert fake.calls == []
+
+
+def test_the_dry_run_command_is_shell_quoted(dist: Path, tmp_path: Path) -> None:
+    spaced = tmp_path / "with space"
+    dist.rename(spaced)
+    line = publish(spaced, runner=Fake())
+    assert f"'{spaced}/manifest.json'" in line
