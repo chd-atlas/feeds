@@ -48,7 +48,10 @@ the first 8 hex digits of the h5ad's sha256, which the job log prints.
    Rep, cell class and Region; then without Region) with `--min-cells 10`, and
    `farah_extract.py` flattens both into `$OUT_DIR/pseudobulk.tsv`. Measured on
    the first run (job 21367175, hvantk 96ceafb4, 2026-11-02, per the atlas's
-   `sbatch` comments): 2 m 30 s, MaxRSS 6.39 GB, 81,993 rows. The time limit
+   `sbatch` comments): 2 m 30 s, MaxRSS 6.39 GB, 81,993 rows. At hvantk
+   a7ce8302 (job 21476247, 2026-11-11), 1 m 02 s and MaxRSS 12.10 GB, with
+   the same `pseudobulk.tsv` bytes; a 12G request was killed for memory, so
+   the sbatch asks for 48G. The time limit
    must stay at or under the partition's MaxTime (2 h on the atlas's cluster).
 
 3. Read from the log the h5ad's digest (`input sha256: ...`), the registry's
