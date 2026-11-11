@@ -2,7 +2,8 @@ name: HUGO Gene Nomenclature Committee
 url: https://www.genenames.org/
 licence: CC0-1.0
 redistribution: permitted
-# Quoted as the atlas's mirrors/sources.yaml records it, read on 2026-10-25:
+# Quoted as the atlas's mirrors/sources.yaml records it (the quote entered the atlas on
+# 2026-07-31, atlas commit cbbca9d) and re-read on the live page on 2026-11-11:
 # https://www.genenames.org/about/license/
 licence_evidence: >-
   "all data is released under the Creative Commons Public Domain (CC0) License

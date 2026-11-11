@@ -31,12 +31,16 @@ the first 8 hex digits of the h5ad's sha256, which the job log prints.
    ```
 
 2. Submit (compute nodes have no git and no internet; the files name no
-   partition, `--mail-user` or site path):
+   partition, no mail address or site path). `JOB_CODE_URL` is required: a GitHub
+   tree permalink, at the full commit, to the `hpc/` scripts you staged (for a
+   feeds checkout, `https://github.com/chd-atlas/feeds/tree/<40 hex>/sources/farah2024_hoc/hpc`).
+   The job refuses anything else, prints it, and also prints the registry's
+   sha256:
 
    ```bash
    CPU_PARTITION=<the cluster CPU partition> INPUT_H5AD=<h5ad> \
      HVANTK_REPO=<flat hvantk checkout> HVANTK_PYTHON=<hvantk python> \
-     OUT_DIR=<dir> bash submit.sh
+     JOB_CODE_URL=<permalink> OUT_DIR=<dir> bash submit.sh
    ```
 
    or `sbatch -p <partition> farah_celltypes.sbatch` with the same variables and
@@ -47,8 +51,12 @@ the first 8 hex digits of the h5ad's sha256, which the job log prints.
    `sbatch` comments): 2 m 30 s, MaxRSS 6.39 GB, 81,993 rows. The time limit
    must stay at or under the partition's MaxTime (2 h on the atlas's cluster).
 
-3. Read the h5ad's digest from the log (`input sha256: ...`), then build the
-   package into an empty directory:
+3. Read from the log the h5ad's digest (`input sha256: ...`), the registry's
+   (`registry sha256: ...`), the code permalink (`job code url: ...`) and the
+   hvantk commit (`hvantk HEAD: ...`). Then, from a **clean checkout of the
+   `origin/dev` commit you will publish**, build the package into an empty
+   directory. `build` reads the commit from git and refuses uncommitted changes
+   under `src`, `sources`, `schemas`, `pyproject.toml` and `uv.lock`:
 
    ```python
    from datetime import date
@@ -60,31 +68,49 @@ the first 8 hex digits of the h5ad's sha256, which the job log prints.
        Path("genes.tsv"),
        atlas_commit="<40 hex>",  # the commit genes.tsv was read at
        h5ad_sha256="<64 hex, from the job log>",
+       registry_sha256="<64 hex, from the job log; must equal genes.tsv's>",
        pseudobulk_made_on=date(2026, 11, 2),  # the job log's `date:` line, or sacct
+       job_code_url="<the job log's `job code url:` line>",
+       revision=1,
        built_by={
-           "recipe_commit": "<40 hex>",
            "host": "<node>",
            "job": "<id>",
-           "hvantk_release": "<hvantk commit>",
+           "hvantk_release": "<hvantk HEAD from the job log>",
        },
        out=Path("dist/farah2024_hoc"),
    )
    ```
 
-   `build` refuses an `h5ad_sha256` that is not 64 lowercase hex and an
-   `atlas_commit` that is not a 40-hex sha. The version is `19a1d496` for the
-   h5ad of `sources.yaml`'s `sha256:19a1d4961c2f...` (`-r2`, ... after a recipe
-   change that keeps the input).
+   `build` refuses an `h5ad_sha256` or `registry_sha256` that is not 64 lowercase
+   hex, a `registry_sha256` that is not the digest of the `genes.tsv` it is given,
+   an `atlas_commit` that is not a 40-hex sha, a `job_code_url` that is not a
+   `chd-atlas/feeds` or `chd-atlas/chd-atlas.github.io` tree permalink at a 40-hex
+   commit, and a `built_by` without `hvantk_release`. The version is `19a1d496`
+   for the h5ad of `sources.yaml`'s `sha256:19a1d4961c2f...` at revision 1 (see
+   Conventions in the root README for `-r2`, ...).
 
 `inputs` in the manifest holds two entries: the h5ad (the UCSC URL, the digest
 the log printed, retrieved_on 2026-04-18, the h5ad's own build date) and the
 pseudobulk (its sha256, computed by `build`; `retrieved_on` is `pseudobulk_made_on`, the
 job's date). The pseudobulk file is a cluster-local intermediate and is not published:
-only its sha256 is recorded. The schema requires a `url`, so it is a permalink to this
-recipe's `hpc/` directory at `built_by["recipe_commit"]`, the code that made it.
+only its sha256 is recorded. The schema requires a `url`, so it is `job_code_url`,
+the permalink the job printed to the code that made it. That is not necessarily
+`built_by["recipe_commit"]`, which names the code that ran `build`.
+
+For the cached stand-in run (job 21367175, 2026-11-02, hvantk 96ceafb4), the code
+that ran was the atlas's `scripts/hpc`, not feeds, so its `job_code_url` is
+`https://github.com/chd-atlas/chd-atlas.github.io/tree/<sha>/scripts/hpc`, where
+`<sha>` is atlas commit 6d5c08a expanded to its full 40 hex digits
+(`git -C <atlas checkout> rev-parse 6d5c08a`).
 
 ## Rules, and why
 
+- **`input_counts` describes the job's already-sliced pseudobulk.** The cut from
+  the source's 33,538 genes to the registry's happens in the job
+  (`hpc/farah_extract.py`), so the manifest shows only what survived it. Measured
+  2026-11-11 with the real pseudobulk: `input_counts = {rows: 81,993, genes: 181}`
+  and `dropped: []`; nothing in `build` is left out on real data, and the `dropped`
+  entry is exercised by fixtures alone.
 - **Per (gene, cell type, region)** the package carries the median across hearts
   of counts per million, quartiles when at least three hearts support them, the
   number of hearts, the cells pooled and the share of them expressing the gene.
@@ -101,7 +127,8 @@ recipe's `hpc/` directory at `built_by["recipe_commit"]`, the code that made it.
   that is not a registry row's approved symbol is left out and counted in
   `dropped`. A registry gene whose approved symbol the source lacks has no rows:
   CRIPTO, because the source uses its previous symbol TDGF1.
-- **The build stops** on a source symbol with leading or trailing whitespace (named, never
+- **The build stops** on a registry that is not the one the job sliced with (the
+  `registry_sha256` check), on a source symbol with leading or trailing whitespace (named, never
   stripped), a heart counted twice in one group, a heart's group with fewer than
   10 cells (hvantk drops such a group at `--min-cells`, so one arriving means the
   job ran without it; checked on every row, in the slice or not), a registry

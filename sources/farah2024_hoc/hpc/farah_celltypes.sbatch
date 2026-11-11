@@ -27,7 +27,7 @@ set -euo pipefail
 PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
 cd "$PROJECT_DIR"
 
-# --- Site (overridable; no absolute path is committed, $WORK and $HOME expand per user) ---
+# --- Site (overridable; no absolute path is committed) ---
 HPC_ENV_MODULE="${HPC_ENV_MODULE:-hpc-env/13.1}"
 HVANTK_PYTHON="${HVANTK_PYTHON:?Set HVANTK_PYTHON to the hvantk environment python}"
 HVANTK_REPO="${HVANTK_REPO:?Set HVANTK_REPO to a flat hvantk checkout}"
@@ -40,6 +40,13 @@ INPUT_H5AD="${INPUT_H5AD:?Set INPUT_H5AD to the farah_2024.h5ad path}"
 # --- Required ---
 REGISTRY="${REGISTRY:?Set REGISTRY to the genes.tsv shipped with this job}"
 OUT_DIR="${OUT_DIR:?Set OUT_DIR to a writable output directory}"
+# A GitHub tree permalink, at the full commit, to the hpc/ scripts that were staged for
+# this job (e.g. https://github.com/chd-atlas/feeds/tree/<40 hex>/sources/farah2024_hoc/hpc).
+# The job cannot see git, so the operator states it; it is printed below and recipe.py's
+# build refuses anything that is not such a permalink.
+JOB_CODE_URL="${JOB_CODE_URL:?Set JOB_CODE_URL to the permalink of the staged hpc/ scripts}"
+[[ "$JOB_CODE_URL" =~ ^https://github\.com/chd-atlas/(feeds|chd-atlas\.github\.io)/tree/[0-9a-f]{40}/ ]] \
+  || { echo "ERROR: JOB_CODE_URL is not a chd-atlas tree permalink at a 40-hex commit" >&2; exit 1; }
 
 BY_REGION="$OUT_DIR/farah_by_region.h5ad"
 POOLED="$OUT_DIR/farah_pooled.h5ad"
@@ -95,6 +102,8 @@ echo "host:         $(hostname)"
 echo "job:          ${SLURM_JOB_ID:-<none>}"
 echo "python:       $("$HVANTK_PYTHON" -V 2>&1)"
 echo "hvantk HEAD:  $HVANTK_HEAD"
+echo "job code url: $JOB_CODE_URL"
+echo "registry sha256: $(sha256sum "$REGISTRY" | cut -d' ' -f1)"
 echo "min cells:    $MIN_CELLS"
 echo "input:        $INPUT_H5AD"
 echo "out:          $OUT_DIR"

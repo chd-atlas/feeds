@@ -19,7 +19,9 @@ import pytest
 from feeds.package import PackageRefused
 from sources.hgnc import recipe
 
-BUILT_BY = {"recipe_commit": "a" * 40, "host": "login01", "hvantk_release": "4c90a241"}
+HVANTK_COMMIT = "4c90a241" + "0" * 32
+RECIPE_COMMIT = "a" * 40
+BUILT_BY = {"host": "login01", "hvantk_release": HVANTK_COMMIT}
 
 RAW_HEADER = "hgnc_id\tsymbol\tname\tstatus\tuniprot_ids\tmane_select"
 # The complete set quotes its multi-value cells; the hvantk export does not.
@@ -114,10 +116,23 @@ def _tsv(path: Path, header: str, rows: list[Any]) -> Path:
     return path
 
 
+def _sidecar(table: Path, **over: Any) -> None:
+    """hvantk's ``<output>.provenance.json`` (hvantk docs, guide/usage.md at 4c90a241)."""
+    record: dict[str, Any] = {
+        "plugin": "hgnc",
+        "dataset": "hgnc:lookup",
+        "build_timestamp": "2026-11-10T09:30:00+00:00",
+        "builder_commit": HVANTK_COMMIT,
+    }
+    record.update(over)
+    table.with_name(table.name + ".provenance.json").write_text(json.dumps(record))
+
+
 def _inputs(
     tmp_path: Path, *, raw_rows: list[str] | None = None, hvantk_rows: list[Any] | None = None
 ):
     hvantk = _tsv(tmp_path / "hgnc_lookup.tsv.gz", HVANTK_HEADER, hvantk_rows or HVANTK_ROWS)
+    _sidecar(hvantk)
     raw = _tsv(tmp_path / "hgnc_complete_set.txt", RAW_HEADER, raw_rows or RAW_ROWS)
     return hvantk, raw
 
@@ -130,6 +145,7 @@ def _build(tmp_path: Path, hvantk: Path, raw: Path, **over: Any) -> Path:
         "revision": 1,
         "built_by": BUILT_BY,
         "out": tmp_path / "pkg",
+        "commit_of": lambda: RECIPE_COMMIT,
     }
     return recipe.build(hvantk, raw, **(kwargs | over))
 
@@ -221,7 +237,14 @@ def test_the_package_rows_are_the_rules_applied(tmp_path: Path) -> None:
             "sha256": raw_sha,
             "retrieved_on": "2026-11-11",
             "upstream_release": "2026-10-16",
-        }
+        },
+        {
+            "name": "hgnc_lookup.tsv.gz",
+            "url": f"https://github.com/chd-atlas/feeds/tree/{RECIPE_COMMIT}/sources/hgnc/hpc",
+            "sha256": hashlib.sha256(hvantk.read_bytes()).hexdigest(),
+            "retrieved_on": "2026-11-10",
+            "upstream_release": None,
+        },
     ]
     assert manifest["input_counts"] == {"rows": 9, "genes": 8}
     assert manifest["dropped"] == [
@@ -245,7 +268,7 @@ def test_the_package_rows_are_the_rules_applied(tmp_path: Path) -> None:
         "redistribution": "permitted",
     }
     assert "CC0" in manifest["licence_evidence"]
-    assert manifest["built_by"] == BUILT_BY
+    assert manifest["built_by"] == {**BUILT_BY, "recipe_commit": RECIPE_COMMIT}
     (table,) = manifest["tables"]
     assert (table["name"], table["format_version"], table["rows"], table["genes"]) == (
         "genes",
@@ -319,6 +342,7 @@ def test_a_column_the_recipe_reads_that_hvantk_did_not_export_is_named(tmp_path:
     header = "\t".join(f for f in recipe.HVANTK_FIELDS if f != "mane_select")
     rows = [r[:-1] for r in HVANTK_ROWS]
     hvantk = _tsv(tmp_path / "hgnc_lookup.tsv.gz", header, rows)
+    _sidecar(hvantk)
     raw = _tsv(tmp_path / "hgnc_complete_set.txt", RAW_HEADER, RAW_ROWS)
     with pytest.raises(PackageRefused, match="lacks column.*mane_select"):
         _build(tmp_path, hvantk, raw)
@@ -337,7 +361,7 @@ def test_a_quoted_hvantk_cell_is_refused_not_unquoted(tmp_path: Path) -> None:
     rows = [list(r) for r in HVANTK_ROWS]
     rows[0][2] = '"quoted" name'
     hvantk, raw = _inputs(tmp_path, hvantk_rows=rows)
-    with pytest.raises(PackageRefused, match="opens with a double quote"):
+    with pytest.raises(PackageRefused, match="holds a double quote"):
         _build(tmp_path, hvantk, raw)
 
 
@@ -359,3 +383,45 @@ def test_the_release_is_an_iso_date_and_matches_an_archive_name(
     ok = tmp_path / "hgnc_complete_set_2026-10-16.txt"
     renamed.rename(ok)
     _build(tmp_path, hvantk, ok, release="2026-10-16")
+
+
+def test_hvantk_provenance_is_required_and_must_agree_with_the_declared_release(
+    tmp_path: Path,
+) -> None:
+    hvantk, raw = _inputs(tmp_path)
+    sidecar = hvantk.with_name(hvantk.name + ".provenance.json")
+    other = "b" * 40
+    cases = [
+        ("no hvantk_release", {"built_by": {"host": "login01"}}, None, "hvantk_release"),
+        ("no sidecar", {}, "missing", "sidecar.*missing or unreadable"),
+        ("unreadable sidecar", {}, "garbage", "sidecar.*missing or unreadable"),
+        ("version, not a commit", {}, {"builder_commit": "hvantk 0.6.0"}, "not a 40-hex commit"),
+        ("no commit", {}, {"builder_commit": None}, "not a 40-hex commit"),
+        ("dirty commit", {}, {"builder_commit": HVANTK_COMMIT + "-dirty"}, "not a 40-hex"),
+        ("a different commit", {}, {"builder_commit": other}, f"builder_commit {other}"),
+        ("no timestamp", {}, {"build_timestamp": "yesterday"}, "build_timestamp"),
+    ]
+    for name, over, change, message in cases:
+        sidecar.unlink(missing_ok=True)
+        if change == "garbage":
+            sidecar.write_text("{")
+        elif isinstance(change, dict):
+            _sidecar(hvantk, **change)
+        elif change is None:
+            _sidecar(hvantk)
+        with pytest.raises(PackageRefused, match=message):
+            _build(tmp_path / name.replace(" ", "_"), hvantk, raw, **over)
+        assert not (tmp_path / name.replace(" ", "_") / "pkg").exists(), name
+
+
+def test_a_supplied_recipe_commit_must_equal_the_builds_own(tmp_path: Path) -> None:
+    hvantk, raw = _inputs(tmp_path)
+    same = {**BUILT_BY, "recipe_commit": RECIPE_COMMIT}
+    pkg = _build(tmp_path / "a", hvantk, raw, built_by=same)
+    assert json.loads((pkg / "manifest.json").read_text())["built_by"]["recipe_commit"] == (
+        RECIPE_COMMIT
+    )
+    with pytest.raises(PackageRefused, match="recipe_commit"):
+        _build(tmp_path / "b", hvantk, raw, built_by={**BUILT_BY, "recipe_commit": "b" * 40})
+    with pytest.raises(PackageRefused, match="40-hex"):
+        _build(tmp_path / "c", hvantk, raw, commit_of=lambda: "main")

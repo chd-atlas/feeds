@@ -35,6 +35,13 @@ from typing import Any
 import polars as pl
 
 from feeds.package import PackageRefused, TableOut, write_package
+from feeds.provenance import (
+    CommitOf,
+    current_commit,
+    hvantk_sidecar,
+    require_hvantk_release,
+    stamp,
+)
 from feeds.source import load_source
 from feeds.version import package_version
 
@@ -100,6 +107,8 @@ UNIPROT_PINS: Mapping[str, str] = {
     # microprotein.
     "HGNC:9896": "P98175",
 }
+
+HPC_URL_FORMAT = "https://github.com/chd-atlas/feeds/tree/{commit}/sources/hgnc/hpc"
 
 _APPROVED = "Approved"
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -204,11 +213,20 @@ def build(
     revision: int,
     built_by: dict[str, Any],
     out: Path,
+    commit_of: CommitOf = current_commit,
 ) -> Path:
     """Write the ``hgnc`` package into the empty directory ``out`` and return it.
 
-    ``release`` is the complete set's archive date (e.g. ``2026-10-16``) and is
-    the package version at revision 1.
+    ``release`` is the complete set's archive date (e.g. ``2026-10-06``) and is
+    the package version at revision 1. ``revision`` has no default: a published
+    version is permanent (F13), so the operator states whether this build is the
+    first for its input or a recipe change (``-r2``, ...) or a rebuild whose
+    ``manifest.json`` bytes differ.
+
+    ``built_by`` must carry ``hvantk_release``, the full commit of the hvantk
+    checkout that ran, and it must equal the ``builder_commit`` of hvantk's
+    sidecar ``<hvantk_tsv>.provenance.json``. ``recipe_commit`` is set by the
+    build from ``commit_of`` (the clean feeds checkout; tests stub it).
     """
     if not _ISO_DATE.fullmatch(release):
         raise PackageRefused(f"release '{release}' is not an ISO date (YYYY-MM-DD)")
@@ -216,6 +234,14 @@ def build(
     if named and named.group(1) != release:
         raise PackageRefused(
             f"{raw.name} is the {named.group(1)} archive but release is '{release}'"
+        )
+    built_by, recipe_commit = stamp(built_by, commit_of)
+    release_commit = require_hvantk_release(built_by)
+    builder_commit, export_made_on = hvantk_sidecar(hvantk_tsv)
+    if builder_commit != release_commit:
+        raise PackageRefused(
+            f"built_by hvantk_release is {release_commit!r} but hvantk's sidecar records "
+            f"builder_commit {builder_commit}"
         )
     source = load_source(HERE / "source.yaml")
     frame = _read_hvantk(hvantk_tsv)
@@ -255,7 +281,16 @@ def build(
                 "sha256": sha256,
                 "retrieved_on": retrieved_on.isoformat(),
                 "upstream_release": release,
-            }
+            },
+            {
+                "name": hvantk_tsv.name,
+                # Not a download location: hvantk's export is a cluster intermediate and is
+                # not published. The URL pins the job code, at the commit that built this.
+                "url": HPC_URL_FORMAT.format(commit=recipe_commit),
+                "sha256": hashlib.sha256(hvantk_tsv.read_bytes()).hexdigest(),
+                "retrieved_on": export_made_on.isoformat(),
+                "upstream_release": None,
+            },
         ],
         input_counts={
             "rows": raw_frame.height,

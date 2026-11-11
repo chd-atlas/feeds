@@ -31,7 +31,9 @@ from feeds.package import PackageRefused
 from feeds.version import package_version
 from sources.farah2024_hoc import recipe
 
-BUILT_BY = {"recipe_commit": "a" * 40, "host": "login01", "hvantk_release": "96ceafb4"}
+BUILT_BY = {"host": "login01", "hvantk_release": "96ceafb4"}
+RECIPE_COMMIT = "a" * 40
+JOB_CODE_URL = "https://github.com/chd-atlas/chd-atlas.github.io/tree/" + "6" * 40 + "/scripts/hpc"
 ATLAS_COMMIT = "f" * 40
 MADE_ON = date(2026, 11, 2)
 H5AD_SHA = "19a1d4961c2f38194b7589e86dc53cae45c272fc0f9d8a7e907edeefe3215c2c"
@@ -74,16 +76,23 @@ def _inputs(
     return pseudobulk, genes
 
 
-def _build(tmp_path: Path, lines: list[str], **over: Any) -> Path:
-    pseudobulk, genes = _inputs(tmp_path, lines, over.pop("registry", None))
-    kwargs: dict[str, Any] = {
+def _kwargs(tmp_path: Path, genes: Path) -> dict[str, Any]:
+    return {
         "atlas_commit": ATLAS_COMMIT,
         "h5ad_sha256": H5AD_SHA,
+        "registry_sha256": hashlib.sha256(genes.read_bytes()).hexdigest(),
         "pseudobulk_made_on": MADE_ON,
+        "job_code_url": JOB_CODE_URL,
+        "revision": 1,
         "built_by": BUILT_BY,
         "out": tmp_path / "pkg",
+        "commit_of": lambda: RECIPE_COMMIT,
     }
-    return recipe.build(pseudobulk, genes, **(kwargs | over))
+
+
+def _build(tmp_path: Path, lines: list[str], **over: Any) -> Path:
+    pseudobulk, genes = _inputs(tmp_path, lines, over.pop("registry", None))
+    return recipe.build(pseudobulk, genes, **(_kwargs(tmp_path, genes) | over))
 
 
 def _rows(pkg: Path) -> list[dict[str, str]]:
@@ -195,16 +204,8 @@ def test_the_manifest_records_the_slice_commit_and_registry_size(tmp_path: Path)
 
 
 def test_the_version_is_the_h5ad_prefix_and_both_inputs_are_recorded(tmp_path: Path) -> None:
-    pseudobulk, genes = _inputs(tmp_path, [_line()])
-    pkg = recipe.build(
-        pseudobulk,
-        genes,
-        atlas_commit=ATLAS_COMMIT,
-        h5ad_sha256=H5AD_SHA,
-        pseudobulk_made_on=MADE_ON,
-        built_by=BUILT_BY,
-        out=tmp_path / "pkg",
-    )
+    pkg = _build(tmp_path, [_line()])
+    pseudobulk = tmp_path / "pseudobulk.tsv"
     manifest = _manifest(pkg)
     assert (
         manifest["version"]
@@ -219,35 +220,73 @@ def test_the_version_is_the_h5ad_prefix_and_both_inputs_are_recorded(tmp_path: P
     )
     assert h5ad["url"] == "https://cells.ucsc.edu/?ds=hoc+all-heart"
     assert pb["retrieved_on"] == "2026-11-02"
-    assert pb["url"] == (
-        f"https://github.com/chd-atlas/feeds/tree/{BUILT_BY['recipe_commit']}"
-        "/sources/farah2024_hoc/hpc"
-    )
+    assert pb["url"] == JOB_CODE_URL
     assert pb["sha256"] == hashlib.sha256(pseudobulk.read_bytes()).hexdigest()
     assert manifest["source"]["version"] == f"sha256:{H5AD_SHA}"
     assert manifest["source"]["redistribution"] == "permitted_with_attribution"
 
 
-def test_the_pseudobulk_date_and_recipe_commit_reach_the_manifest(tmp_path: Path) -> None:
-    other = {**BUILT_BY, "recipe_commit": "b" * 40}
-    one = _manifest(_build(tmp_path / "a", [_line()]))["inputs"][1]
-    two = _manifest(
-        _build(tmp_path / "b", [_line()], pseudobulk_made_on=date(2026, 12, 1), built_by=other)
-    )["inputs"][1]
+def test_the_job_code_url_date_and_build_commit_reach_the_manifest(tmp_path: Path) -> None:
+    other_url = "https://github.com/chd-atlas/feeds/tree/" + "c" * 40 + "/sources/x/hpc"
+    first = _manifest(_build(tmp_path / "a", [_line()]))
+    second = _manifest(
+        _build(
+            tmp_path / "b",
+            [_line()],
+            pseudobulk_made_on=date(2026, 12, 1),
+            job_code_url=other_url,
+            commit_of=lambda: "b" * 40,
+        )
+    )
+    one, two = first["inputs"][1], second["inputs"][1]
     assert (one["retrieved_on"], two["retrieved_on"]) == ("2026-11-02", "2026-12-01")
-    assert one["url"].split("/tree/")[1].startswith("a" * 40 + "/")
-    assert two["url"].split("/tree/")[1].startswith("b" * 40 + "/")
+    assert (one["url"], two["url"]) == (JOB_CODE_URL, other_url)
+    # The input's URL names the job's code; built_by names the code that ran this build.
+    assert first["built_by"] == {**BUILT_BY, "recipe_commit": RECIPE_COMMIT}
+    assert second["built_by"]["recipe_commit"] == "b" * 40
 
 
-@pytest.mark.parametrize("commit", ["dev", "A" * 40, "a" * 39, None])
-def test_a_missing_or_malformed_recipe_commit_is_refused(
-    tmp_path: Path, commit: str | None
-) -> None:
-    built_by = {k: v for k, v in BUILT_BY.items() if k != "recipe_commit"}
-    if commit is not None:
-        built_by["recipe_commit"] = commit
+@pytest.mark.parametrize("commit", ["dev", "A" * 40, "a" * 39, ""])
+def test_a_malformed_build_commit_is_refused(tmp_path: Path, commit: str) -> None:
+    with pytest.raises(PackageRefused, match="40-hex"):
+        _build(tmp_path, [_line()], commit_of=lambda: commit)
+
+
+def test_a_supplied_recipe_commit_must_equal_the_builds_own(tmp_path: Path) -> None:
+    same = {**BUILT_BY, "recipe_commit": RECIPE_COMMIT}
+    assert _manifest(_build(tmp_path / "a", [_line()], built_by=same))["built_by"] == same
     with pytest.raises(PackageRefused, match="recipe_commit"):
-        _build(tmp_path, [_line()], built_by=built_by)
+        _build(tmp_path / "b", [_line()], built_by={**BUILT_BY, "recipe_commit": "b" * 40})
+
+
+@pytest.mark.parametrize(
+    ("over", "match"),
+    [
+        ({"built_by": {"host": "login01"}}, "hvantk_release"),
+        ({"built_by": {"host": "login01", "hvantk_release": " "}}, "hvantk_release"),
+        ({"job_code_url": "https://github.com/chd-atlas/feeds/tree/main/sources"}, "job_code_url"),
+        (
+            {"job_code_url": "https://github.com/other/feeds/tree/" + "a" * 40 + "/x"},
+            "job_code_url",
+        ),
+        (
+            {"job_code_url": "https://github.com/chd-atlas/feeds/blob/" + "a" * 40 + "/x"},
+            "job_code_url",
+        ),
+        ({"registry_sha256": "b" * 64}, "sliced with"),
+        ({"registry_sha256": "B" * 64}, "registry_sha256"),
+    ],
+)
+def test_provenance_the_job_printed_is_required_and_checked(
+    tmp_path: Path, over: dict[str, Any], match: str
+) -> None:
+    with pytest.raises(PackageRefused, match=match):
+        _build(tmp_path, [_line()], **over)
+    assert not (tmp_path / "pkg").exists()
+
+
+def test_the_revision_reaches_the_version(tmp_path: Path) -> None:
+    assert _manifest(_build(tmp_path, [_line()], revision=2))["version"] == "19a1d496-r2"
 
 
 def test_two_builds_are_byte_identical(tmp_path: Path) -> None:
@@ -310,15 +349,7 @@ def test_a_wrong_header_is_refused(tmp_path: Path) -> None:
     pseudobulk, genes = _inputs(tmp_path, [_line()])
     pseudobulk.write_text("a\tb\n1\t2\n", encoding="utf-8")
     with pytest.raises(PackageRefused, match="header is"):
-        recipe.build(
-            pseudobulk,
-            genes,
-            atlas_commit=ATLAS_COMMIT,
-            h5ad_sha256=H5AD_SHA,
-            pseudobulk_made_on=MADE_ON,
-            built_by=BUILT_BY,
-            out=tmp_path / "pkg",
-        )
+        recipe.build(pseudobulk, genes, **_kwargs(tmp_path, genes))
 
 
 @pytest.mark.parametrize(
@@ -400,4 +431,15 @@ def test_the_cluster_files_name_no_partition_and_no_mail_user() -> None:
     assert "#SBATCH --time=0-00:30:00" in directives
     assert "hpc-env/13.1" in sbatch
     submit = _hpc("submit.sh").read_text(encoding="utf-8")
-    assert "all_cpu" not in submit and "all_cpu" not in sbatch
+    assert "#SBATCH" not in submit  # submit.sh passes --partition on the command line
+
+
+def test_the_job_requires_and_prints_its_code_permalink_and_the_registry_digest() -> None:
+    sbatch = _hpc("farah_celltypes.sbatch").read_text(encoding="utf-8")
+    submit = _hpc("submit.sh").read_text(encoding="utf-8")
+    assert 'JOB_CODE_URL="${JOB_CODE_URL:?' in sbatch
+    assert 'JOB_CODE_URL="${JOB_CODE_URL:?' in submit
+    assert 'echo "job code url: $JOB_CODE_URL"' in sbatch
+    assert 'echo "registry sha256: $(sha256sum "$REGISTRY"' in sbatch
+    # the shell check and recipe.py's check are the same pattern
+    assert recipe._JOB_CODE_URL.pattern.removesuffix(".*") in sbatch

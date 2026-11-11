@@ -13,6 +13,7 @@ cd "$(dirname "$0")"
 CPU_PARTITION="${CPU_PARTITION:?Set CPU_PARTITION to the cluster CPU partition}"
 REGISTRY="${REGISTRY:-$PWD/genes.tsv}"
 OUT_DIR="${OUT_DIR:?Set OUT_DIR to a writable output directory}"
+JOB_CODE_URL="${JOB_CODE_URL:?Set JOB_CODE_URL to the tree permalink of these hpc/ scripts}"
 
 if [[ -z "${SLURM_EMAIL_NOTIFICATION:-}" && -r "$HOME/.bashrc" ]]; then
   SLURM_EMAIL_NOTIFICATION="$(
@@ -27,7 +28,7 @@ else
   echo 'mail: OFF (export SLURM_EMAIL_NOTIFICATION=you@example.org to enable)'
 fi
 
-export REGISTRY OUT_DIR
+export REGISTRY OUT_DIR JOB_CODE_URL
 for v in INPUT_H5AD HVANTK_PYTHON HVANTK_REPO MIN_CELLS; do
   [[ -n "${!v:-}" ]] && export "$v"
 done
@@ -37,6 +38,7 @@ SBATCH_ARGS=(--partition="$CPU_PARTITION" --export=ALL)
 
 echo "partition: $CPU_PARTITION"
 echo "registry:  $REGISTRY"
+echo "code url:  $JOB_CODE_URL"
 echo "out dir:   $OUT_DIR"
 # Build a real array: expanding an unset one as "${ARR[@]:-}" passes an empty
 # filename to sbatch.

@@ -25,7 +25,8 @@ from feeds.package import PackageRefused
 from feeds.version import package_version
 from sources.sierant2025_ds6 import fetch, recipe
 
-BUILT_BY = {"recipe_commit": "a" * 40, "host": "login01"}
+BUILT_BY = {"host": "login01"}
+RECIPE_COMMIT = "a" * 40
 STUDY = "PMID:40127276"
 
 # Row 7 of the real workbook, written out so a change to `_EXPECTED_HEADERS` has to
@@ -191,6 +192,16 @@ def pinned(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     return make
 
 
+def _build(workbook: Path, tmp_path: Path, **over: Any) -> Path:
+    kwargs: dict[str, Any] = {
+        "revision": 1,
+        "built_by": BUILT_BY,
+        "out": tmp_path / "pkg",
+        "commit_of": lambda: RECIPE_COMMIT,
+    }
+    return recipe.build(workbook, **(kwargs | over))
+
+
 def _read(package: Path, table: str) -> list[dict[str, str]]:
     lines = gzip.decompress((package / f"{table}.tsv.gz").read_bytes()).decode().splitlines()
     header = lines[0].split("\t")
@@ -205,7 +216,7 @@ def _manifest(package: Path) -> dict[str, Any]:
 def test_every_panel_gene_is_carried_under_the_papers_symbol(tmp_path: Path, pinned: Any) -> None:
     """Three genes given in reverse order: six arm rows and three combined rows each, sorted."""
     workbook = pinned(tmp_path / "w.xlsx", _sheet(["ZIC3", "NOT-A-HGNC-SYMBOL", "ACTC1"]))
-    out = recipe.build(workbook, built_by=BUILT_BY, out=tmp_path / "pkg")
+    out = _build(workbook, tmp_path)
 
     arms = _read(out, "burden")
     combined = _read(out, "burden_combined")
@@ -265,7 +276,7 @@ def test_an_excel_date_symbol_is_dropped_and_named(tmp_path: Path, pinned: Any) 
     """Both date shapes are dropped with their count and examples; nothing is guessed."""
     symbols = ["TBX5", "2001-03-01", "1-Mar", "12-Sep", "GATA4", "2002-09-02"]
     workbook = pinned(tmp_path / "w.xlsx", _sheet(symbols))
-    out = recipe.build(workbook, built_by=BUILT_BY, out=tmp_path / "pkg")
+    out = _build(workbook, tmp_path)
 
     assert {r["gene"] for r in _read(out, "burden")} == {"GATA4", "TBX5"}
     assert {r["gene"] for r in _read(out, "burden_combined")} == {"GATA4", "TBX5"}
@@ -285,7 +296,7 @@ def test_an_excel_date_symbol_is_dropped_and_named(tmp_path: Path, pinned: Any) 
 def test_a_gene_that_merely_looks_like_a_date_is_kept(tmp_path: Path, pinned: Any) -> None:
     """``MARC1``-style names and symbols with a digit-dash tail are real genes."""
     workbook = pinned(tmp_path / "w.xlsx", _sheet(["MARCH1", "HLA-B", "NKX2-5", "SEPT7"]))
-    out = recipe.build(workbook, built_by=BUILT_BY, out=tmp_path / "pkg")
+    out = _build(workbook, tmp_path)
     assert {r["gene"] for r in _read(out, "burden")} == {"MARCH1", "HLA-B", "NKX2-5", "SEPT7"}
     assert _manifest(out)["dropped"] == []
 
@@ -392,7 +403,7 @@ def test_each_consequence_block_reads_its_own_band_of_the_sheet(
 ) -> None:
     """Every cell in the synthetic record is distinct, so a misplaced index shows."""
     workbook = pinned(tmp_path / "w.xlsx", _sheet(["TBX5"]))
-    out = recipe.build(workbook, built_by=BUILT_BY, out=tmp_path / "pkg")
+    out = _build(workbook, tmp_path)
     got = [
         (r["consequence_class"], r["pvalue"], r["local_fdr"]) for r in _read(out, "burden_combined")
     ]
@@ -410,7 +421,7 @@ def test_a_shifted_header_is_refused_rather_than_transcribed(tmp_path: Path, pin
     shifted = header[:7] + ["Obs"] + header[7:]
     workbook = pinned(tmp_path / "w.xlsx", _sheet(["TBX5"], header=shifted))
     with pytest.raises(PackageRefused, match="does not match the layout") as raised:
-        recipe.build(workbook, built_by=BUILT_BY, out=tmp_path / "pkg")
+        _build(workbook, tmp_path)
     assert "column 8" in str(raised.value)
     assert not (tmp_path / "pkg").exists()
 
@@ -422,7 +433,7 @@ def test_a_workbook_whose_fisher_and_jl_fdr_bands_are_swapped_is_refused(
     bands[23], bands[27] = bands[27], bands[23]
     workbook = pinned(tmp_path / "w.xlsx", _sheet(["TBX5"], bands=bands))
     with pytest.raises(PackageRefused, match="band row") as raised:
-        recipe.build(workbook, built_by=BUILT_BY, out=tmp_path / "pkg")
+        _build(workbook, tmp_path)
     assert "column 23" in str(raised.value)
 
 
@@ -436,7 +447,7 @@ def test_a_workbook_that_is_not_the_pinned_one_is_refused(tmp_path: Path) -> Non
     """Unpatched: a perfectly good synthetic workbook has the wrong hash."""
     workbook = _workbook(tmp_path / "w.xlsx", _sheet(["TBX5"]))
     with pytest.raises(PackageRefused, match="not the pinned") as raised:
-        recipe.build(workbook, built_by=BUILT_BY, out=tmp_path / "pkg")
+        _build(workbook, tmp_path)
     assert recipe.PINNED_SHA256 in str(raised.value)
     assert not (tmp_path / "pkg").exists()
 
@@ -444,7 +455,7 @@ def test_a_workbook_that_is_not_the_pinned_one_is_refused(tmp_path: Path) -> Non
 def test_a_symbol_on_two_panel_rows_is_refused(tmp_path: Path, pinned: Any) -> None:
     workbook = pinned(tmp_path / "w.xlsx", _sheet(["TBX5", "GATA4", "TBX5"]))
     with pytest.raises(PackageRefused, match="more than one row.*TBX5"):
-        recipe.build(workbook, built_by=BUILT_BY, out=tmp_path / "pkg")
+        _build(workbook, tmp_path)
 
 
 # ---- fetch: a local file:// bundle stands in for Europe PMC ----------------------------
@@ -567,7 +578,23 @@ def test_dropped_examples_are_capped_at_five_and_the_count_is_not(
 ) -> None:
     dates = [f"{day}-Mar" for day in range(1, 9)]  # eight corrupted symbols
     workbook = pinned(tmp_path / "w.xlsx", _sheet(["TBX5", *dates]))
-    out = recipe.build(workbook, built_by=BUILT_BY, out=tmp_path / "pkg")
+    out = _build(workbook, tmp_path)
     (entry,) = _manifest(out)["dropped"]
     assert entry["count"] == 8
     assert entry["examples"] == sorted(dates)[:5]
+
+
+def test_the_revision_and_the_builds_own_commit_reach_the_manifest(
+    tmp_path: Path, pinned: Any
+) -> None:
+    workbook = pinned(tmp_path / "w.xlsx", _sheet(["ACTC1"]))
+    out = _build(workbook, tmp_path / "a", revision=2)
+    manifest = _manifest(out)
+    assert manifest["version"] == f"{recipe.PINNED_SHA256[:8]}-r2"
+    assert manifest["built_by"] == {**BUILT_BY, "recipe_commit": RECIPE_COMMIT}
+    same = {**BUILT_BY, "recipe_commit": RECIPE_COMMIT}
+    _build(workbook, tmp_path / "b", built_by=same)
+    with pytest.raises(PackageRefused, match="recipe_commit"):
+        _build(workbook, tmp_path / "c", built_by={**BUILT_BY, "recipe_commit": "b" * 40})
+    with pytest.raises(PackageRefused, match="40-hex"):
+        _build(workbook, tmp_path / "d", commit_of=lambda: "dev")

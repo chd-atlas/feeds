@@ -21,10 +21,11 @@ service returning `license="CC BY"` for PMC12002227).
 from pathlib import Path
 from sources.sierant2025_ds6 import fetch, recipe
 
-workbook = fetch.fetch(Path("data"))  # standard library only; the server is slow (minutes)
+workbook = fetch.fetch(Path("local/sierant2025"))  # standard library only; slow (minutes)
 recipe.build(
     workbook,
-    built_by={"recipe_commit": "<40 hex>", "host": "<machine>"},
+    revision=1,
+    built_by={"host": "<machine>"},  # recipe_commit is read from the clean checkout
     out=Path("dist/sierant2025_ds6"),
 )
 ```
@@ -35,8 +36,10 @@ reads only `pnas.2420343122.sd06.xlsx` from it, refuses a member path that
 escapes the destination, and refuses (writing nothing) a file whose sha256 is not
 `d8e9f7777b329c810adde8b9f4a0f91a4d1a6211b760daeb9329ae6f36606daa`. `build`
 refuses any workbook with another sha256 too: the column map is positional and
-was written against that file. The version is therefore `d8e9f777`
-(`-r2`, ... after a recipe change that keeps the same input).
+was written against that file. The version is therefore `d8e9f777` at revision 1
+(see Conventions in the root README for when `-r2`, ... is needed). `local/` is
+ignored by git, so the download does not dirty the checkout that `build` requires
+to be clean.
 
 ## Rules
 

@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import Any, Final, NamedTuple
 
 from feeds.package import PackageRefused, TableOut, write_package
+from feeds.provenance import CommitOf, current_commit, require_hvantk_release, stamp
 from feeds.source import load_source
 from feeds.version import package_version
 
@@ -74,9 +75,11 @@ H5AD_NAME: Final = "farah_2024.h5ad"
 H5AD_RETRIEVED_ON: Final = date(2026, 4, 18)
 PSEUDOBULK_NAME: Final = "pseudobulk.tsv"
 # Not a download location: the pseudobulk is a cluster-local intermediate and is not
-# published. The URL pins the code that produced it, at the recipe commit that ran.
-PSEUDOBULK_URL_FORMAT: Final = (
-    "https://github.com/chd-atlas/feeds/tree/{commit}/sources/farah2024_hoc/hpc"
+# published. Its URL is a permalink to the job code that produced it, which the job
+# prints (JOB_CODE_URL) and which need not be this build's recipe commit: the cached
+# stand-in run (job 21367175) ran the atlas's scripts/hpc at 6d5c08a.
+_JOB_CODE_URL: Final = re.compile(
+    r"https://github\.com/chd-atlas/(feeds|chd-atlas\.github\.io)/tree/[0-9a-f]{40}/.*"
 )
 
 UNIT: Final = "cpm"
@@ -312,24 +315,48 @@ def build(
     *,
     atlas_commit: str,
     h5ad_sha256: str,
+    registry_sha256: str,
     pseudobulk_made_on: date,
+    job_code_url: str,
+    revision: int,
     built_by: dict[str, Any],
     out: Path,
+    commit_of: CommitOf = current_commit,
 ) -> Path:
     """Write the ``farah2024_hoc`` package into the empty directory ``out`` and return it.
 
-    ``registry`` is the atlas's ``mirrors/genes.tsv`` at ``atlas_commit``.
+    ``registry`` is the atlas's ``mirrors/genes.tsv`` at ``atlas_commit``;
+    ``registry_sha256`` is the digest the cluster job printed for the copy it sliced
+    with, and the build refuses a ``registry`` that differs.
     ``h5ad_sha256`` is the h5ad's digest as the cluster job printed it.
-    ``pseudobulk_made_on`` is the job's date (its log's ``date:`` line, or ``sacct``);
-    ``built_by["recipe_commit"]`` pins the pseudobulk input's URL.
+    ``pseudobulk_made_on`` is the job's date (its log's ``date:`` line, or ``sacct``).
+    ``job_code_url`` is the ``JOB_CODE_URL`` the job printed: a GitHub tree permalink to
+    the ``hpc/`` scripts that ran, and the pseudobulk input's ``url``.
+    ``revision`` has no default: a published version is permanent (F13), so the operator
+    states whether this is the first build of the input (1) or a recipe change or a
+    rebuild whose ``manifest.json`` bytes differ (2, 3, ...).
+    ``built_by`` must carry ``hvantk_release``; ``recipe_commit`` is set by the build
+    from ``commit_of`` (the clean feeds checkout; tests stub it).
     """
     if not _SHA256.fullmatch(h5ad_sha256):
         raise PackageRefused("h5ad_sha256 must be 64 lowercase hex characters")
     if not _COMMIT.fullmatch(atlas_commit):
         raise PackageRefused("atlas_commit must be a 40-character lowercase hex sha")
-    recipe_commit = built_by.get("recipe_commit")
-    if not isinstance(recipe_commit, str) or not _COMMIT.fullmatch(recipe_commit):
-        raise PackageRefused('built_by["recipe_commit"] must be a 40-character lowercase hex sha')
+    if not _SHA256.fullmatch(registry_sha256):
+        raise PackageRefused("registry_sha256 must be 64 lowercase hex characters")
+    if not _JOB_CODE_URL.fullmatch(job_code_url):
+        raise PackageRefused(
+            f"job_code_url {job_code_url!r} is not a GitHub tree permalink at a 40-hex commit "
+            "of chd-atlas/feeds or chd-atlas/chd-atlas.github.io"
+        )
+    built_by, _ = stamp(built_by, commit_of)
+    require_hvantk_release(built_by)
+    registry_actual = hashlib.sha256(registry.read_bytes()).hexdigest()
+    if registry_actual != registry_sha256:
+        raise PackageRefused(
+            f"{registry.name} has sha256 {registry_actual}, but the job sliced with "
+            f"{registry_sha256}"
+        )
     source = load_source(HERE / "source.yaml")
     pseudobulk_sha256 = hashlib.sha256(pseudobulk.read_bytes()).hexdigest()
     rows = read_pseudobulk(pseudobulk)
@@ -352,8 +379,7 @@ def build(
     version = package_version(
         upstream_release=None,
         input_sha256=h5ad_sha256,
-        # A recipe change that alters this package's bytes bumps `revision` (-r2, ... per spec F13).
-        revision=1,
+        revision=revision,
     )
     return write_package(
         out,
@@ -372,7 +398,7 @@ def build(
             },
             {
                 "name": PSEUDOBULK_NAME,
-                "url": PSEUDOBULK_URL_FORMAT.format(commit=recipe_commit),
+                "url": job_code_url,
                 "sha256": pseudobulk_sha256,
                 "retrieved_on": pseudobulk_made_on.isoformat(),
                 "upstream_release": None,

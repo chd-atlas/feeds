@@ -24,7 +24,7 @@ Its cases are the Pediatric Cardiac Genomics Consortium's CHD GENES cohort
 (NCT01196182) -- the same consortium as Jin et al. 2017 (PMID:28991257), at
 11,555 probands and 3,887 trios against Jin's ~2,871. **Jin's trios are a subset
 of these.** Curating both would publish the same children twice under two study
-ids, and `shared_cohorts` could not show it, because the overlap sits inside one
+ids, and the atlas's `shared_cohorts` could not show it, because the overlap sits inside one
 study's cohort list rather than between two. The atlas's `curation/cohorts.yaml` `pcgc`
 entry records that constraint so a later curator meets it before writing a row.
 
@@ -58,7 +58,7 @@ for 245 of 248 genes, and the number of distinct probands for only 235 --
 CACNA1A 80 variants across 79 probands, TSC1 36 across 34, LRP1 135 across 132 --
 and `Obs` follows the variant every time. The denominators are allele counts too:
 they run to 23,022 against 11,555 probands, vary gene by gene with coverage, and
-are not all even. See `CountUnit`.
+are not all even. See the atlas's `CountUnit`.
 
 `origin` is `transmitted_or_unphased`, not `inherited` and not `any`. The arm
 removes de novo mutations, then pools variants whose transmission is known with
@@ -74,8 +74,8 @@ p-value is not a function of its components'. Verified on KMT2D: the damaging
 de novo `Obs` of 27 is the LOF 21 plus the D-Mis 6, and the damaging
 case-control `Obs` of 108 is 12 plus 96.
 
-`ConsequenceClass.DAMAGING` sorts first so the components read as a breakdown of
-the headline rather than as a third independent finding, and `pages.py` states
+The atlas's `ConsequenceClass.DAMAGING` sorts first so the components read as a breakdown of
+the headline rather than as a third independent finding, and the atlas's `pages.py` states
 the relationship outright.
 
 THE COMBINATION GOES IN ITS OWN TABLE
@@ -114,7 +114,7 @@ label; the residual is consistent with a conditional maximum-likelihood estimate
 or with the displayed counts differing slightly from the tested 2x2 after the
 study's platform harmonisation. **The package carries the study's printed value
 unchanged** -- the atlas computes no effect size -- and at the three significant
-figures `pages._fmt` renders, a 5e-4 relative difference is invisible anyway.
+figures the atlas's `pages._fmt` renders, a 5e-4 relative difference is invisible anyway.
 
 Two genes carry a literal `Inf`: RPL5 (LOF, 1 case allele of 21,901 against 0 of
 270,942) and KLF4 (D-Mis, 1 of 20,558 against 0 of 234,502). Neither was
@@ -154,6 +154,7 @@ from typing import Any, Final
 from xml.etree import ElementTree as ET
 
 from feeds.package import PackageRefused, TableOut, write_package
+from feeds.provenance import CommitOf, current_commit, stamp
 from feeds.source import load_source
 from feeds.version import package_version
 from sources.sierant2025_ds6.fetch import BUNDLE_URL, PINNED_SHA256, WORKBOOK_NAME
@@ -332,7 +333,7 @@ def _number(row: list[str], index: int) -> str:
     """A published float at its shortest exact spelling; see `convert_burden`.
 
     `Inf` is returned as the empty string: the caller pairs that with
-    `effect_bound: unbounded_above`, because `encode_json` sets `allow_nan=False`
+    `effect_bound: unbounded_above`, because the atlas's `encode_json` sets `allow_nan=False`
     and infinity cannot be published as a number.
     """
     value = _cell(row, index)
@@ -412,8 +413,8 @@ def _case_control_row(
         "expected_count": "",
         "effect": effect,
         # Present even where the effect is not: an unbounded odds ratio still
-        # has to say it is an odds ratio. `validate_burden` requires the measure
-        # for either an effect or a bound, and `pages._effect` has no branch that
+        # has to say it is an odds ratio. The atlas's `validate_burden` requires the measure
+        # for either an effect or a bound, and the atlas's `pages._effect` has no branch that
         # omits it.
         "effect_measure": "odds_ratio",
         "effect_bound": "unbounded_above" if unbounded else "",
@@ -660,8 +661,23 @@ def _table(
     return TableOut(name, 1, order, cells, "gene")
 
 
-def build(workbook: Path, *, built_by: dict[str, Any], out: Path) -> Path:
-    """Write the ``sierant2025_ds6`` package into the empty directory ``out`` and return it."""
+def build(
+    workbook: Path,
+    *,
+    revision: int,
+    built_by: dict[str, Any],
+    out: Path,
+    commit_of: CommitOf = current_commit,
+) -> Path:
+    """Write the ``sierant2025_ds6`` package into the empty directory ``out`` and return it.
+
+    ``revision`` has no default: a published version is permanent (F13), so the
+    operator states whether this is the first build of the input (1) or a recipe
+    change or a rebuild whose ``manifest.json`` bytes differ (2, 3, ...).
+    ``built_by["recipe_commit"]`` is set by the build from ``commit_of`` (the clean
+    feeds checkout; tests stub it) and is refused if supplied and different.
+    """
+    built_by, _ = stamp(built_by, commit_of)
     data = workbook.read_bytes()
     sha256 = hashlib.sha256(data).hexdigest()
     if sha256 != PINNED_SHA256:
@@ -710,8 +726,7 @@ def build(workbook: Path, *, built_by: dict[str, Any], out: Path) -> Path:
     return write_package(
         out,
         package=SOURCE,
-        # A recipe change that alters this package's bytes bumps `revision` (-r2, ... per spec F13).
-        version=package_version(upstream_release=None, input_sha256=sha256, revision=1),
+        version=package_version(upstream_release=None, input_sha256=sha256, revision=revision),
         ids="symbol",
         coverage="every_gene",
         tables=[

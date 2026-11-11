@@ -8,7 +8,8 @@ against it (approved symbol, then alias, then previous symbol).
 `source.yaml` holds the name, URL, licence (CC0-1.0, `redistribution:
 permitted`) and the licence evidence, which quotes
 <https://www.genenames.org/about/license/> as the atlas's `mirrors/sources.yaml`
-recorded it on 2026-10-25.
+recorded it (entered 2026-07-31, atlas commit cbbca9d; the live page was re-read on
+2026-11-11).
 
 ## Build
 
@@ -33,15 +34,24 @@ recorded it on 2026-10-25.
    file), `OUT_DIR`, `HVANTK_REPO` and `HVANTK_PYTHON` set. It needs a `java` on
    PATH (it refuses without one and warns if it is not 11) and sets hvantk's
    Spark settings itself. It runs hvantk's `hgnc:lookup` (`--skip-download`) and
-   exports `hgnc_lookup.tsv.gz`. The job log prints the hvantk checkout and
-   commit, the host and the job id: put them in `built_by`. The sbatch has not
-   been run; its time and memory are placeholders until a first run's `seff`.
+   exports `hgnc_lookup.tsv.gz` with hvantk's sidecar
+   `hgnc_lookup.tsv.gz.provenance.json` next to it; keep the two together. The
+   sbatch exports `HVANTK_BUILDER_COMMIT` so that sidecar records the hvantk
+   commit (without it hvantk records `hvantk 0.6.0` and `build` refuses). The job
+   log prints the hvantk checkout and commit, the host and the job id: put the
+   host, job and `hvantk_release` (the full 40-hex hvantk commit) in `built_by`.
+   Stage `hpc/` from the feeds commit you will build at: the second `inputs`
+   entry's URL names the build's commit. The sbatch has not been run; its time
+   and memory are placeholders until a first run's `seff`.
 
    Local fallback, measured by the review of this recipe: hvantk's own poetry
    environment with Java 21 and hail 0.2.137 ran the same command in 24 s. This
    is a fallback the owner may allow or refuse.
 
-3. Build the package into an empty directory:
+3. From a **clean checkout of the `origin/dev` commit you will publish**, build
+   the package into an empty directory. `build` reads that commit from git and
+   refuses uncommitted changes under `src`, `sources`, `schemas`, `pyproject.toml`
+   and `uv.lock`:
 
    ```python
    from datetime import date
@@ -56,17 +66,19 @@ recorded it on 2026-10-25.
        release="2026-10-06",
        revision=1,
        built_by={
-           "recipe_commit": "<40 hex>",
            "host": "<node>",
            "job": "<id>",
-           "hvantk_release": "<hvantk commit>",
+           "hvantk_release": "<the 40-hex hvantk commit>",  # must equal the sidecar's
        },
        out=Path("dist/hgnc"),
    )
    ```
 
-   The version is `release` (`-r2`, `-r3` ... after a recipe change that keeps the
-   same input). The writer refuses before writing a byte.
+   The version is `release` (`-r2`, `-r3` ... see Conventions in the root README for
+   when a revision is needed). `build` sets `built_by["recipe_commit"]` itself. The
+   writer refuses before writing a byte. `inputs` holds the complete set and hvantk's
+   export (its sha256, the date of its sidecar, and a permalink to `hpc/` at the
+   build's commit).
 
 ## Rules, and why
 
