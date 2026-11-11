@@ -53,7 +53,7 @@ recorded it on 2026-10-25.
        Path("hgnc_complete_set_2026-10-06.txt"),
        raw_url=".../monthly/tsv/hgnc_complete_set_2026-10-06.txt",  # the full URL
        retrieved_on=date(2026, 11, 11),
-       release="2026-10-16",
+       release="2026-10-06",
        revision=1,
        built_by={
            "recipe_commit": "<40 hex>",
