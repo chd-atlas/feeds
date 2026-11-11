@@ -524,8 +524,9 @@ def test_the_cross_check_normalises_as_hvantk_does_and_shows_five_examples(
 
     bad = [list(r) for r in good]
     for r in bad:
-        r[1] = r[1] + "x"  # 5 genes: gene_symbol differs in each
+        r[1] = r[1] + "x"  # 5 genes x 2 columns = 10 mismatches
+        r[2] = r[2] + "x"
     hvantk, raw = _inputs(tmp_path / "bad", hvantk_rows=bad, raw_rows=_raw_for(good))
-    with pytest.raises(PackageRefused, match=r"5 cell\(s\).*showing 5") as caught:
+    with pytest.raises(PackageRefused, match=r"10 cell\(s\).*showing 5") as caught:
         _build(tmp_path / "bad", hvantk, raw)
-    assert str(caught.value).count("gene_symbol:") == 5
+    assert str(caught.value).count("hvantk '") == 5
