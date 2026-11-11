@@ -1,0 +1,47 @@
+[project]
+name = "feeds"
+version = "0.1.0"
+description = "Versioned source packages for the CHD atlas"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "polars>=1.43,<2",
+    "jsonschema>=4",
+    "pyyaml>=6.0.3",
+]
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "types-jsonschema",
+    "types-pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/feeds"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests", "sources"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+# Tests are not type-checked (as in tests/); hpc/ scripts import cluster-only packages.
+exclude = ["^sources/[^/]+/(tests|hpc)/"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/conftest.py" = ["SIM905"]

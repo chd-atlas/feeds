@@ -1,0 +1,16 @@
+name: >-
+  Farah et al. 2024 developing human heart scRNA-seq, UCSC Cell Browser
+  dataset hoc/all-heart (142,946 cells), aggregated to per-heart pseudobulks
+url: https://cells.ucsc.edu/?ds=hoc+all-heart
+licence: >-
+  Not stated by the UCSC Cell Browser; data accompany a CC BY 4.0 article
+  (PMID:38480880) and are attributed to Farah et al. 2024
+redistribution: permitted_with_attribution
+# As the atlas's mirrors/sources.yaml records it: UCSC's hoc/desc.json and
+# hoc/dataset.json (fetched 2026-11-02) state no licence. Owner decision
+# 2026-11-02: treat the data as attributable to Farah et al. 2024, whose article
+# is CC BY 4.0.
+licence_evidence: >-
+  UCSC's hoc/desc.json and hoc/dataset.json (fetched 2026-11-02) state no
+  licence. Owner decision 2026-11-02: treat the data as attributable to Farah
+  et al. 2024, whose article (PMID:38480880) is CC BY 4.0.

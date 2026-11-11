@@ -1,0 +1,17 @@
+name: >-
+  Sierant et al. 2025, PNAS 122(13) e2420343122, Dataset S6
+  (gene-level meta-analysis over all 248 MIPseq panel genes: Poisson de novo
+  enrichment in trios, Fisher case-control of ultra-rare TUVs against
+  gnomAD, and the JL-FDR meta-analysis combining the two)
+url: https://www.pnas.org/doi/suppl/10.1073/pnas.2420343122/suppl_file/pnas.2420343122.sd06.xlsx
+licence: CC-BY-4.0
+redistribution: permitted_with_attribution
+# Quoted as the atlas's mirrors/sources.yaml records it, confirmed there on
+# 2026-08-05 three ways (the article statement, Crossref's licence record for
+# the DOI, NCBI's OA service returning license="CC BY" for PMC12002227), because
+# PNAS uses CC BY-NC-ND on some content:
+licence_evidence: >-
+  "Copyright (c) 2025 the Author(s). Published by PNAS. This open access
+  article is distributed under Creative Commons Attribution License 4.0
+  (CC BY)." -- the article's own permissions statement, which covers its
+  supplementary material.
