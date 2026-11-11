@@ -21,6 +21,7 @@ import gzip
 import hashlib
 import importlib.util
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,7 @@ from sources.farah2024_hoc import recipe
 
 BUILT_BY = {"recipe_commit": "a" * 40, "host": "login01", "hvantk_release": "96ceafb4"}
 ATLAS_COMMIT = "f" * 40
+MADE_ON = date(2026, 11, 2)
 H5AD_SHA = "19a1d4961c2f38194b7589e86dc53cae45c272fc0f9d8a7e907edeefe3215c2c"
 HEADER = "symbol\theart\tcell_type\tregion\tcounts\tcount_nonzero\tn_cells\tlibrary_size"
 REGISTRY_HEADER = "hgnc_id\tsymbol\tname\taliases\tprev_symbols"
@@ -77,6 +79,7 @@ def _build(tmp_path: Path, lines: list[str], **over: Any) -> Path:
     kwargs: dict[str, Any] = {
         "atlas_commit": ATLAS_COMMIT,
         "h5ad_sha256": H5AD_SHA,
+        "pseudobulk_made_on": MADE_ON,
         "built_by": BUILT_BY,
         "out": tmp_path / "pkg",
     }
@@ -198,6 +201,7 @@ def test_the_version_is_the_h5ad_prefix_and_both_inputs_are_recorded(tmp_path: P
         genes,
         atlas_commit=ATLAS_COMMIT,
         h5ad_sha256=H5AD_SHA,
+        pseudobulk_made_on=MADE_ON,
         built_by=BUILT_BY,
         out=tmp_path / "pkg",
     )
@@ -214,9 +218,36 @@ def test_the_version_is_the_h5ad_prefix_and_both_inputs_are_recorded(tmp_path: P
         "2026-04-18",
     )
     assert h5ad["url"] == "https://cells.ucsc.edu/?ds=hoc+all-heart"
+    assert pb["retrieved_on"] == "2026-11-02"
+    assert pb["url"] == (
+        f"https://github.com/chd-atlas/feeds/tree/{BUILT_BY['recipe_commit']}"
+        "/sources/farah2024_hoc/hpc"
+    )
     assert pb["sha256"] == hashlib.sha256(pseudobulk.read_bytes()).hexdigest()
     assert manifest["source"]["version"] == f"sha256:{H5AD_SHA}"
     assert manifest["source"]["redistribution"] == "permitted_with_attribution"
+
+
+def test_the_pseudobulk_date_and_recipe_commit_reach_the_manifest(tmp_path: Path) -> None:
+    other = {**BUILT_BY, "recipe_commit": "b" * 40}
+    one = _manifest(_build(tmp_path / "a", [_line()]))["inputs"][1]
+    two = _manifest(
+        _build(tmp_path / "b", [_line()], pseudobulk_made_on=date(2026, 12, 1), built_by=other)
+    )["inputs"][1]
+    assert (one["retrieved_on"], two["retrieved_on"]) == ("2026-11-02", "2026-12-01")
+    assert one["url"].split("/tree/")[1].startswith("a" * 40 + "/")
+    assert two["url"].split("/tree/")[1].startswith("b" * 40 + "/")
+
+
+@pytest.mark.parametrize("commit", ["dev", "A" * 40, "a" * 39, None])
+def test_a_missing_or_malformed_recipe_commit_is_refused(
+    tmp_path: Path, commit: str | None
+) -> None:
+    built_by = {k: v for k, v in BUILT_BY.items() if k != "recipe_commit"}
+    if commit is not None:
+        built_by["recipe_commit"] = commit
+    with pytest.raises(PackageRefused, match="recipe_commit"):
+        _build(tmp_path, [_line()], built_by=built_by)
 
 
 def test_two_builds_are_byte_identical(tmp_path: Path) -> None:
@@ -243,9 +274,13 @@ def test_a_group_under_ten_cells_stops_the_build(tmp_path: Path, symbol: str) ->
         _build(tmp_path, [_line("9pcw-1"), small])
 
 
-def test_two_symbols_that_are_one_name_stop_the_build(tmp_path: Path) -> None:
-    lines = [_line(symbol="AAA"), _line(symbol="AAA ")]
-    with pytest.raises(PackageRefused, match="'AAA' and 'AAA ' both name AAA"):
+@pytest.mark.parametrize("padded", ["AAA ", " AAA", "ZZZ "])
+@pytest.mark.parametrize("beside_bare", [True, False])
+def test_a_padded_symbol_is_refused_by_name_not_stripped(
+    tmp_path: Path, padded: str, beside_bare: bool
+) -> None:
+    lines = [_line(symbol="AAA"), _line(symbol=padded)] if beside_bare else [_line(symbol=padded)]
+    with pytest.raises(PackageRefused, match=f"symbol {padded!r} has leading or trailing"):
         _build(tmp_path, lines)
 
 
@@ -280,6 +315,7 @@ def test_a_wrong_header_is_refused(tmp_path: Path) -> None:
             genes,
             atlas_commit=ATLAS_COMMIT,
             h5ad_sha256=H5AD_SHA,
+            pseudobulk_made_on=MADE_ON,
             built_by=BUILT_BY,
             out=tmp_path / "pkg",
         )

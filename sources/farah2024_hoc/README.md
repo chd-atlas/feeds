@@ -51,6 +51,7 @@ the first 8 hex digits of the h5ad's sha256, which the job log prints.
    package into an empty directory:
 
    ```python
+   from datetime import date
    from pathlib import Path
    from sources.farah2024_hoc import recipe
 
@@ -59,6 +60,7 @@ the first 8 hex digits of the h5ad's sha256, which the job log prints.
        Path("genes.tsv"),
        atlas_commit="<40 hex>",  # the commit genes.tsv was read at
        h5ad_sha256="<64 hex, from the job log>",
+       pseudobulk_made_on=date(2026, 11, 2),  # the job log's `date:` line, or sacct
        built_by={
            "recipe_commit": "<40 hex>",
            "host": "<node>",
@@ -76,9 +78,10 @@ the first 8 hex digits of the h5ad's sha256, which the job log prints.
 
 `inputs` in the manifest holds two entries: the h5ad (the UCSC URL, the digest
 the log printed, retrieved_on 2026-04-18, the h5ad's own build date) and the
-pseudobulk (its sha256, computed by `build`; the schema requires a `url`, so it
-names this recipe's `hpc/` directory, and `retrieved_on` is the constant
-`PSEUDOBULK_RETRIEVED_ON`, the first job's date, to edit when a new job is run).
+pseudobulk (its sha256, computed by `build`; `retrieved_on` is `pseudobulk_made_on`, the
+job's date). The pseudobulk file is a cluster-local intermediate and is not published:
+only its sha256 is recorded. The schema requires a `url`, so it is a permalink to this
+recipe's `hpc/` directory at `built_by["recipe_commit"]`, the code that made it.
 
 ## Rules, and why
 
@@ -98,8 +101,8 @@ names this recipe's `hpc/` directory, and `retrieved_on` is the constant
   that is not a registry row's approved symbol is left out and counted in
   `dropped`. A registry gene whose approved symbol the source lacks has no rows:
   CRIPTO, because the source uses its previous symbol TDGF1.
-- **The build stops** on two source symbols that are one name once whitespace is
-  stripped, a heart counted twice in one group, a heart's group with fewer than
+- **The build stops** on a source symbol with leading or trailing whitespace (named, never
+  stripped), a heart counted twice in one group, a heart's group with fewer than
   10 cells (hvantk drops such a group at `--min-cells`, so one arriving means the
   job ran without it; checked on every row, in the slice or not), a registry
   listing a gene or symbol twice, and any malformed input row (wrong header or

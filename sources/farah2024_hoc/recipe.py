@@ -33,7 +33,7 @@ TDGF1).
 
 WHAT STOPS THE BUILD
 --------------------
-Two source symbols that are one name once whitespace is stripped, a heart counted
+A source symbol with leading or trailing whitespace, a heart counted
 twice in one group, a heart's group with fewer than 10 cells, and any malformed
 input row refuse the build before a byte is written. The 10-cell rule is refused
 rather than dropped: hvantk drops such a group at the job's ``--min-cells``
@@ -72,12 +72,11 @@ H5AD_NAME: Final = "farah_2024.h5ad"
 # The h5ad's build date (its uns/hvantk_metadata/build_date, per the atlas's
 # mirrors/sources.yaml); the raw download date is not recorded.
 H5AD_RETRIEVED_ON: Final = date(2026, 4, 18)
-# The cluster job that wrote the first pseudobulk (atlas mirrors/sources.yaml:
-# job 21367175, 2026-11-02).
-PSEUDOBULK_RETRIEVED_ON: Final = date(2026, 11, 2)
 PSEUDOBULK_NAME: Final = "pseudobulk.tsv"
-PSEUDOBULK_URL: Final = (
-    "https://github.com/chd-atlas/feeds/tree/dev/sources/farah2024_hoc/hpc"  # the job that wrote it
+# Not a download location: the pseudobulk is a cluster-local intermediate and is not
+# published. The URL pins the code that produced it, at the recipe commit that ran.
+PSEUDOBULK_URL_FORMAT: Final = (
+    "https://github.com/chd-atlas/feeds/tree/{commit}/sources/farah2024_hoc/hpc"
 )
 
 UNIT: Final = "cpm"
@@ -180,6 +179,8 @@ def read_pseudobulk(path: Path) -> list[PseudobulkRow]:
         symbol, heart, cell_type, region, counts, nonzero, cells, library = record
         if not (symbol and heart and cell_type):
             raise PackageRefused(f"{where}: blank symbol, heart or cell_type")
+        if symbol != symbol.strip():
+            raise PackageRefused(f"{where}: symbol {symbol!r} has leading or trailing whitespace")
         if region not in REGIONS:
             raise PackageRefused(f"{where}: region {region!r} is not one of {sorted(REGIONS)}")
         count_value = _finite(counts, "counts", where)
@@ -240,21 +241,11 @@ def read_registry(path: Path) -> tuple[frozenset[str], int]:
 
 
 def slice_symbols(symbols: Sequence[str], approved: frozenset[str]) -> set[str]:
-    """The source symbols that are a registry gene's approved symbol.
+    """The source symbols that are a registry gene's approved symbol, exactly as written.
 
-    Two source symbols that are equal once whitespace is stripped (``'SOS1 '``
-    beside ``'SOS1'``) would carry one gene's counts under two names, so that
-    refuses the build. The kept names are the source's own.
+    ``read_pseudobulk`` has already refused a padded symbol, so none is stripped here.
     """
-    kept: dict[str, str] = {}
-    for symbol in sorted(set(symbols)):
-        if symbol.strip() not in approved:
-            continue
-        bare = symbol.strip()
-        if bare in kept:
-            raise PackageRefused(f"{kept[bare]!r} and {symbol!r} both name {bare}")
-        kept[bare] = symbol
-    return set(kept.values())
+    return {symbol for symbol in symbols if symbol in approved}
 
 
 def summarise(rows: Sequence[PseudobulkRow], kept: set[str]) -> list[dict[str, object]]:
@@ -321,6 +312,7 @@ def build(
     *,
     atlas_commit: str,
     h5ad_sha256: str,
+    pseudobulk_made_on: date,
     built_by: dict[str, Any],
     out: Path,
 ) -> Path:
@@ -328,11 +320,16 @@ def build(
 
     ``registry`` is the atlas's ``mirrors/genes.tsv`` at ``atlas_commit``.
     ``h5ad_sha256`` is the h5ad's digest as the cluster job printed it.
+    ``pseudobulk_made_on`` is the job's date (its log's ``date:`` line, or ``sacct``);
+    ``built_by["recipe_commit"]`` pins the pseudobulk input's URL.
     """
     if not _SHA256.fullmatch(h5ad_sha256):
         raise PackageRefused("h5ad_sha256 must be 64 lowercase hex characters")
     if not _COMMIT.fullmatch(atlas_commit):
         raise PackageRefused("atlas_commit must be a 40-character lowercase hex sha")
+    recipe_commit = built_by.get("recipe_commit")
+    if not isinstance(recipe_commit, str) or not _COMMIT.fullmatch(recipe_commit):
+        raise PackageRefused('built_by["recipe_commit"] must be a 40-character lowercase hex sha')
     source = load_source(HERE / "source.yaml")
     pseudobulk_sha256 = hashlib.sha256(pseudobulk.read_bytes()).hexdigest()
     rows = read_pseudobulk(pseudobulk)
@@ -375,9 +372,9 @@ def build(
             },
             {
                 "name": PSEUDOBULK_NAME,
-                "url": PSEUDOBULK_URL,
+                "url": PSEUDOBULK_URL_FORMAT.format(commit=recipe_commit),
                 "sha256": pseudobulk_sha256,
-                "retrieved_on": PSEUDOBULK_RETRIEVED_ON.isoformat(),
+                "retrieved_on": pseudobulk_made_on.isoformat(),
                 "upstream_release": None,
             },
         ],
