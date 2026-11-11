@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=12G
+#SBATCH --mem=48G
 #SBATCH --time=0-00:30:00
 #SBATCH --output=slurm-%j.out
 #SBATCH --error=slurm-%j.err
@@ -17,9 +17,13 @@
 # Pseudobulks the Farah et al. 2024 heart atlas with hvantk, twice (by Age, Rep,
 # cell class and Region; then without Region), and flattens both into
 # $OUT_DIR/pseudobulk.tsv for sources/farah2024_hoc/recipe.py.
-# Resources are from the first real run (seff, job 21367175, 2026-11-02):
-# wall-clock 2m30s, MaxRSS 6.39 GB of the 48G requested then, CPU efficiency
-# 10.5%. Keep the time at or under the partition's MaxTime (2 h on the atlas's
+# Memory: 48G is the only request measured to complete. Job 21367175
+# (2026-11-02) ran at 48G: 2m30s, MaxRSS 6.39 GB, CPU efficiency 10.5%. At
+# 12G, job 21476239 (2026-11-11) was killed for memory in the first
+# `summarize`; its rerun 21476247 at 48G took 1m02s with a MaxRSS of 12.10 GB.
+# Slurm samples MaxRSS, so the true peak is higher: never trim the request to
+# a sampled figure.
+# Keep the time at or under the partition's MaxTime (2 h on the atlas's
 # cluster): that site sets EnforcePartLimits=NO, so a longer request is accepted
 # and then never starts (measured 2026-11-02).
 

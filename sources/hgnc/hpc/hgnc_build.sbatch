@@ -13,8 +13,8 @@
 # silently mails nobody. Pass it on the sbatch command line.
 #
 # Turns HGNC's complete set into hvantk's `hgnc:lookup` table, exported as
-# gzipped TSV for sources/hgnc/recipe.py. Not run yet: the time and memory
-# above are placeholders to replace with `seff` from the first real run.
+# gzipped TSV for sources/hgnc/recipe.py. The first run (job 21476238,
+# 2026-11-11) took 1m16s with a MaxRSS of 1.06 GB of the 12G requested.
 # Keep the time at or under the partition's MaxTime (2 h on the atlas's cluster): that site sets
 # EnforcePartLimits=NO, so a longer request is accepted and then never starts
 # (measured 2026-11-02, atlas scripts/hpc/farah_celltypes.sbatch).
@@ -28,8 +28,11 @@
 # holding exactly one *.txt or *.tsv (hvantk's own rule).
 #
 # Hail needs a Java on PATH. The job refuses without one and warns when it is not
-# 11 (hvantk's image carries 11; hail 0.2.137 was measured running under Java 21
-# locally, so the cluster's version is decided by the first run). The Spark
+# 11 (hvantk's image carries 11; hail 0.2.137 also runs under Java 21). On the
+# atlas's cluster the site module leaves only the system Java 8 (not tried with
+# hail): the first run put a Java 11 module's bin on PATH, and JAVA_HOME, in
+# the submitting shell. A module loaded before `sbatch` does not survive the
+# job's `ml purge`; a PATH entry does. The Spark
 # settings below follow hvantk's skills/hpc-hail-job template: local[cpus], a
 # driver capped at 80% of the memory request, node-local scratch.
 #

@@ -32,7 +32,10 @@ recorded it (entered 2026-07-31, atlas commit cbbca9d; the live page was re-read
 2. Submit `hpc/hgnc_build.sbatch` (`sbatch -p <the cluster's CPU partition>`; the
    file names no site partition) with `RAW_FILE` (or a `RAW_DIR` holding only that
    file), `OUT_DIR`, `HVANTK_REPO` and `HVANTK_PYTHON` set. It needs a `java` on
-   PATH (it refuses without one and warns if it is not 11) and sets hvantk's
+   PATH (it refuses without one and warns if it is not 11; on the atlas's
+   cluster, put a Java 11 module's `bin` on PATH before `sbatch`: the site
+   module alone leaves a Java 8, and a module loaded before `sbatch` does not
+   survive the job's `ml purge`) and sets hvantk's
    Spark settings itself. It runs hvantk's `hgnc:lookup` (`--skip-download`) and
    exports `hgnc_lookup.tsv.gz` with hvantk's sidecar
    `hgnc_lookup.tsv.gz.provenance.json` next to it; keep the two together. The
@@ -41,8 +44,8 @@ recorded it (entered 2026-07-31, atlas commit cbbca9d; the live page was re-read
    log prints the hvantk checkout and commit, the host and the job id: put the
    host, job and `hvantk_release` (the full 40-hex hvantk commit) in `built_by`.
    Stage `hpc/` from the feeds commit you will build at: the second `inputs`
-   entry's URL names the build's commit. The sbatch has not been run; its time
-   and memory are placeholders until a first run's `seff`.
+   entry's URL names the build's commit. The first run (job 21476238,
+   2026-11-11) took 1 m 16 s with a MaxRSS of 1.06 GB.
 
    Local fallback, measured by the review of this recipe: hvantk's own poetry
    environment with Java 21 and hail 0.2.137 ran the same command in 24 s. This
