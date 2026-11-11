@@ -99,3 +99,12 @@ def test_a_number_that_overflows_to_infinity_is_not_finite() -> None:
     }
     assert "not finite" in check_table(["x"], [["1e999"]], sch, ids="symbol")[0]
     assert check_table(["x"], [["1e300"]], sch, ids="symbol") == []
+
+
+def test_an_integer_must_fit_the_64_bits_the_atlas_parses() -> None:
+    schema = {"fields": [{"name": "n", "type": "integer", "constraints": {}}]}
+    fits = ["9223372036854775807", "-9223372036854775808", "+0"]
+    over = ["9223372036854775808", "-9223372036854775809", "9" * 5000]
+    assert check_table(["n"], [[c] for c in fits], schema, ids="symbol") == []
+    errors = check_table(["n"], [[c] for c in over], schema, ids="symbol")
+    assert len(errors) == 3 and all("64-bit" in e for e in errors)

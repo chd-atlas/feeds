@@ -26,6 +26,13 @@ from feeds.version import SEGMENT
 VENDORED = Path(__file__).resolve().parents[2] / "schemas" / "atlas"
 
 
+# The source that owns each flat table without a source column (atlas ING014): another
+# source's package would replace all of it. The atlas's second ING014 branch, a shard
+# another committed manifest carries, depends on its repository and is not mirrored.
+FLAT_TABLE_OWNERS = {"clingen_validity": "clingen", "gencc_submissions": "gencc"}
+HGNC = "hgnc"
+
+
 class PackageRefused(Exception):
     """The package would be misread or refused by the atlas; nothing was written."""
 
@@ -43,18 +50,20 @@ class TableOut:
 def _encode(table: TableOut) -> bytes:
     lines = ["\t".join(table.columns)]
     for number, row in enumerate(table.rows, start=1):
-        for cell in row:
+        for at, cell in enumerate(row):
             if cell is None:
                 continue
+            column = table.columns[at] if at < len(table.columns) else f"#{at + 1}"
             if "\t" in cell or "\n" in cell or "\r" in cell:
                 raise PackageRefused(
-                    f"table '{table.name}' row {number}: a cell holds a tab, newline or "
-                    "carriage return"
+                    f"table '{table.name}' row {number}, column '{column}': a cell holds a tab, "
+                    "newline or carriage return"
                 )
-            if cell.startswith('"'):
+            if '"' in cell:
                 raise PackageRefused(
-                    f"table '{table.name}' row {number}: a cell opens with a double quote "
-                    "(the atlas refuses it as ING015)"
+                    f"table '{table.name}' row {number}, column '{column}': a cell holds a "
+                    "double quote (the atlas refuses a leading one as ING015 and misreads "
+                    "an inner one as ING011)"
                 )
         lines.append("\t".join("" if cell is None else cell for cell in row))
     try:
@@ -97,6 +106,22 @@ def write_package(
     if not licence_evidence.strip():
         raise PackageRefused("licence_evidence must not be blank")
     names = [t.name for t in tables]
+    # The atlas's ING009: `genes` is the registry, and only the hgnc package ships it.
+    if package != HGNC and "genes" in names:
+        raise PackageRefused(
+            f"package '{package}' ships the genes table; only '{HGNC}' may (atlas ING009)"
+        )
+    if package == HGNC and "genes" not in names:
+        raise PackageRefused("the hgnc package must ship the genes table (atlas ING009)")
+    if package == HGNC and ids != "hgnc_id":
+        raise PackageRefused(f"the hgnc package's ids must be hgnc_id, not '{ids}' (atlas ING009)")
+    for name in names:
+        owner = FLAT_TABLE_OWNERS.get(name)
+        if owner is not None and owner != package:
+            raise PackageRefused(
+                f"table '{name}' belongs to source '{owner}'; package '{package}' would "
+                "replace all of it (atlas ING014)"
+            )
     repeated = sorted({n for n in names if names.count(n) > 1})
     if repeated:
         raise PackageRefused(f"table names repeated: {', '.join(repeated)}")

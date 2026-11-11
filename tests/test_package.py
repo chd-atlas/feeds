@@ -154,3 +154,106 @@ def test_the_writer_refuses_a_wrong_gene_column_a_bad_manifest_and_a_used_direct
         write_package(used, **package_kwargs())
     assert not (tmp_path / "a").exists() and not (tmp_path / "b").exists()
     assert [p.name for p in used.iterdir()] == ["stale"]
+
+
+def _genes_table() -> TableOut:
+    cols = [
+        "hgnc_id",
+        "symbol",
+        "name",
+        "aliases",
+        "prev_symbols",
+        "ensembl_gene",
+        "ncbi_gene",
+        "locus",
+        "uniprot",
+        "mane_select",
+    ]
+    return TableOut("genes", 2, tuple(cols), [["HGNC:1100", "BRCA1", "n", *[None] * 7]], "hgnc_id")
+
+
+def _owned(name: str) -> TableOut:
+    return TableOut(name, 1, ("x",), [["1"]], None)
+
+
+def _kw(tables: list[TableOut] | None = None, **over: object) -> dict[str, object]:
+    return {**package_kwargs(tables), **over}
+
+
+@pytest.mark.parametrize(
+    ("atlas_code", "kwargs", "message"),
+    [
+        pytest.param(
+            "ING015",
+            _kw([burden_table([burden_row("TBX5", method_note='"open')])]),
+            "row 1, column 'method_note'.*double quote",
+            id="leading-quote",
+        ),
+        pytest.param(
+            "ING011",
+            _kw([burden_table([burden_row("TBX5"), burden_row("GATA4", method_note='a 5" gap')])]),
+            "row 2, column 'method_note'.*double quote",
+            id="inner-quote",
+        ),
+        pytest.param(
+            "ING009",
+            _kw([_genes_table()]),
+            "only 'hgnc' may",
+            id="genes-in-another-package",
+        ),
+        pytest.param(
+            "ING009",
+            _kw(package="hgnc", ids="hgnc_id"),
+            "must ship the genes table",
+            id="hgnc-without-genes",
+        ),
+        pytest.param(
+            "ING009",
+            _kw([_genes_table()], package="hgnc", ids="symbol"),
+            "ids must be hgnc_id",
+            id="hgnc-with-symbol-ids",
+        ),
+        pytest.param(
+            "TBL000/ING010",
+            _kw([burden_table([burden_row("TBX5", n_cases="99999999999999999999")])]),
+            "row 1, column 'n_cases'.*64-bit",
+            id="integer-beyond-i64",
+        ),
+        pytest.param(
+            "TBL000/ING010",
+            _kw([burden_table([burden_row("TBX5", n_cases="9" * 5000)])]),
+            "64-bit",
+            id="integer-of-5000-digits",
+        ),
+        pytest.param(
+            "TBL000/ING010",
+            _kw([burden_table([burden_row("TBX5", n_cases="-9223372036854775809")])]),
+            "64-bit",
+            id="integer-below-i64",
+        ),
+        pytest.param(
+            "ING014",
+            _kw([_owned("clingen_validity")], package="gencc"),
+            "belongs to source 'clingen'",
+            id="clingen-table-from-gencc",
+        ),
+        pytest.param(
+            "ING014",
+            _kw([_owned("gencc_submissions")]),
+            "belongs to source 'gencc'",
+            id="gencc-table-from-demo",
+        ),
+    ],
+)
+def test_the_writer_refuses_what_the_atlas_refuses(
+    out: Path, atlas_code: str, kwargs: dict[str, object], message: str
+) -> None:
+    """Each case is a package the atlas (f094c28) refuses at ingest under ``atlas_code``."""
+    with pytest.raises(PackageRefused, match=message):
+        write_package(out, **kwargs)  # type: ignore[arg-type]
+    assert not out.exists()
+
+
+def test_the_largest_i64_is_accepted(out: Path) -> None:
+    rows = [burden_row("TBX5", n_cases="9223372036854775807")]
+    write_package(out, **package_kwargs([burden_table(rows)]))

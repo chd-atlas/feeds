@@ -10,6 +10,7 @@ from typing import Any
 _BOOLEANS = frozenset({"true", "false"})
 # Strict forms: no underscores, no surrounding whitespace (polars' i64/f64 parse, atlas TBL000).
 _INTEGER = re.compile(r"[+-]?[0-9]+")
+_I64 = (-(2**63), 2**63 - 1)  # polars' i64 parse; beyond it the atlas's TBL000 -> ING010
 _NUMBER = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 _NON_FINITE = frozenset({"nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"})
 
@@ -18,6 +19,12 @@ def _problem(kind: str, cell: str) -> str | None:
     if kind == "integer":
         if not _INTEGER.fullmatch(cell):
             return "is not an integer"
+        try:
+            inside = _I64[0] <= int(cell) <= _I64[1]
+        except ValueError:  # Python refuses to parse more than 4,300 digits
+            inside = False
+        if not inside:
+            return "is outside the 64-bit integer range"
     elif kind == "number":
         if cell.lower() in _NON_FINITE:
             return "is not finite"
