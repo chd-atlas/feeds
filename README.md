@@ -53,8 +53,10 @@ Every recipe fills the same manifest fields the same way.
   `schemas`, `pyproject.toml` or `uv.lock`, and refuses a caller-supplied value
   that differs. **`built_by.host`** is the machine that ran the step the operator
   names: the cluster node for a job, the workstation for a recipe-only build.
-  **`built_by.hvantk_release`** (hvantk-based recipes) is the full hvantk commit
-  that ran.
+  **`built_by.hvantk_release`** (hvantk-based recipes) is the hvantk commit that
+  ran. HGNC checks it, as a full 40-hex sha, against the commit hvantk's own
+  provenance sidecar records. Farah's job writes no sidecar, so there it is the
+  operator's copy from the job log and is only required to be non-blank.
 - **The revision rule.** A published version is permanent: one version, one set of
   bytes (F13). `revision` is a required argument. It is 1 for the first build of an
   input and 2, 3, ... (`-r2`, ...) for any later build whose `manifest.json` bytes
