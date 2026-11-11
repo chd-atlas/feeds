@@ -25,7 +25,7 @@ Its cases are the Pediatric Cardiac Genomics Consortium's CHD GENES cohort
 11,555 probands and 3,887 trios against Jin's ~2,871. **Jin's trios are a subset
 of these.** Curating both would publish the same children twice under two study
 ids, and `shared_cohorts` could not show it, because the overlap sits inside one
-study's cohort list rather than between two. the atlas's `curation/cohorts.yaml` `pcgc`
+study's cohort list rather than between two. The atlas's `curation/cohorts.yaml` `pcgc`
 entry records that constraint so a later curator meets it before writing a row.
 
 WHICH TABLE, AND WHY IT CARRIES THE NULLS
@@ -33,8 +33,8 @@ WHICH TABLE, AND WHY IT CARRIES THE NULLS
 Dataset S6: all 248 prespecified MIPseq panel genes, with both analytic arms for
 each of three consequence classes. Counted 2026-08-05: 248 gene rows, no
 duplicates. It includes the genes that showed nothing, which is what keeps this
-mirror from being a list of hits -- the same reason `convert_audain2021.py` takes
-S6 over S8 there.
+package from being a list of hits -- the same reason the atlas's
+`convert_audain2021.py` takes S6 over S8 for Audain 2021.
 
 (The atlas's converter also recorded how many of the 248 are in its registry; that
 is a fact about the atlas, and the atlas's ingest result reports it.)
@@ -68,7 +68,7 @@ variants that were never phased; in Dataset S4, 27,429 of 36,054 variant rows ar
 THE THIRD CONSEQUENCE ROW IS THE UNION OF THE OTHER TWO
 -------------------------------------------------------
 Dataset S6 reports each arm for `Damaging (LOF + D-Mis)`, for `Loss of Function`
-alone, and for `D-Mis` alone. All three are mirrored, because the composite is
+alone, and for `D-Mis` alone. All three are published, because the composite is
 the study's *primary* analysis -- its 60 genes are defined by it -- and its
 p-value is not a function of its components'. Verified on KMT2D: the damaging
 de novo `Obs` of 27 is the LOF 21 plus the D-Mis 6, and the damaging
@@ -112,7 +112,7 @@ less well and neither reproduces it exactly. The methods say only "one-tailed
 Fisher's exact test", whose effect estimate is an odds ratio, so that is the
 label; the residual is consistent with a conditional maximum-likelihood estimate
 or with the displayed counts differing slightly from the tested 2x2 after the
-study's platform harmonisation. **The mirror carries the study's printed value
+study's platform harmonisation. **The package carries the study's printed value
 unchanged** -- the atlas computes no effect size -- and at the three significant
 figures `pages._fmt` renders, a 5e-4 relative difference is invisible anyway.
 
@@ -279,7 +279,7 @@ def _check_layout(header: list[str]) -> None:
     """Refuse a workbook whose columns are not where `_BLOCKS` says they are.
 
     Every index in `_BLOCKS` is a bare integer into a three-level header, which
-    is the most brittle thing in this converter: a supplement re-uploaded with
+    is the most brittle thing in this recipe: a supplement re-uploaded with
     one column inserted would transcribe a D-Mis p-value into a LOF row, and
     every downstream gate would pass, because the numbers are individually
     plausible. That is this project's characteristic failure with the sign
@@ -288,7 +288,7 @@ def _check_layout(header: list[str]) -> None:
     wrong = _mismatches(header, _EXPECTED_HEADERS)
     if wrong:
         raise PackageRefused(
-            "the workbook's header row does not match the layout this converter "
+            "the workbook's header row does not match the layout this recipe "
             "was written against, so every column index below is suspect:\n  " + "\n  ".join(wrong)
         )
 
@@ -302,7 +302,7 @@ def _check_bands(band: list[str]) -> None:
     wrong = _mismatches(band, _EXPECTED_BANDS)
     if wrong:
         raise PackageRefused(
-            "the workbook's band row does not name the tests this converter was "
+            "the workbook's band row does not name the tests this recipe was "
             "written against, so a Fisher column may be read as the JL-FDR one:\n  "
             + "\n  ".join(wrong)
         )
@@ -710,6 +710,7 @@ def build(workbook: Path, *, built_by: dict[str, Any], out: Path) -> Path:
     return write_package(
         out,
         package=SOURCE,
+        # A recipe change that alters this package's bytes bumps `revision` (-r2, ... per spec F13).
         version=package_version(upstream_release=None, input_sha256=sha256, revision=1),
         ids="symbol",
         coverage="every_gene",

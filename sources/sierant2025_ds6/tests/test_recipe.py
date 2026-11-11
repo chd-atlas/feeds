@@ -505,3 +505,69 @@ def test_fetch_refuses_a_bundle_without_exactly_one_workbook(
     monkeypatch.setattr(fetch, "BUNDLE_URL", _bundle(tmp_path / "b.zip", {"other.xlsx": b"x"}))
     with pytest.raises(fetch.FetchRefused, match="exactly one"):
         fetch.fetch(tmp_path / "dest")
+
+
+def test_fetch_refuses_a_backslash_in_a_member_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``a\\b/<name>`` has a clean POSIX path; only the backslash clause refuses it."""
+    content = b"workbook bytes"
+    monkeypatch.setattr(fetch, "PINNED_SHA256", hashlib.sha256(content).hexdigest())
+    uri = _bundle(tmp_path / "b.zip", {f"a\\..\\b/{fetch.WORKBOOK_NAME}": content})
+    monkeypatch.setattr(fetch, "BUNDLE_URL", uri)
+    with pytest.raises(fetch.FetchRefused, match="escapes"):
+        fetch.fetch(tmp_path / "dest")
+
+
+def test_fetch_refuses_an_existing_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    content = b"workbook bytes"
+    monkeypatch.setattr(fetch, "PINNED_SHA256", hashlib.sha256(content).hexdigest())
+    monkeypatch.setattr(
+        fetch, "BUNDLE_URL", _bundle(tmp_path / "b.zip", {fetch.WORKBOOK_NAME: content})
+    )
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    (dest / fetch.WORKBOOK_NAME).write_bytes(b"earlier")
+    with pytest.raises(fetch.FetchRefused, match="exists"):
+        fetch.fetch(dest)
+    assert (dest / fetch.WORKBOOK_NAME).read_bytes() == b"earlier"
+
+
+def test_fetch_refuses_a_response_that_is_not_a_zip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    not_zip = tmp_path / "page.html"
+    not_zip.write_bytes(b"<html>500</html>")
+    monkeypatch.setattr(fetch, "BUNDLE_URL", not_zip.as_uri())
+    with pytest.raises(fetch.FetchRefused, match="not return a zip"):
+        fetch.fetch(tmp_path / "dest")
+
+
+def test_fetch_refuses_a_member_over_the_size_cap_before_reading_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content = b"x" * 100
+    monkeypatch.setattr(fetch, "PINNED_SHA256", hashlib.sha256(content).hexdigest())
+    monkeypatch.setattr(
+        fetch, "BUNDLE_URL", _bundle(tmp_path / "b.zip", {fetch.WORKBOOK_NAME: content})
+    )
+    monkeypatch.setattr(fetch, "MAX_MEMBER_BYTES", 99)
+    with pytest.raises(fetch.FetchRefused, match="cap"):
+        fetch.fetch(tmp_path / "dest")
+    monkeypatch.setattr(fetch, "MAX_MEMBER_BYTES", 100)  # the boundary itself is allowed
+    assert fetch.fetch(tmp_path / "dest2").read_bytes() == content
+
+
+def test_the_real_workbook_fits_under_the_size_cap() -> None:
+    assert fetch.MAX_MEMBER_BYTES > 233_828 * 10
+
+
+def test_dropped_examples_are_capped_at_five_and_the_count_is_not(
+    tmp_path: Path, pinned: Any
+) -> None:
+    dates = [f"{day}-Mar" for day in range(1, 9)]  # eight corrupted symbols
+    workbook = pinned(tmp_path / "w.xlsx", _sheet(["TBX5", *dates]))
+    out = recipe.build(workbook, built_by=BUILT_BY, out=tmp_path / "pkg")
+    (entry,) = _manifest(out)["dropped"]
+    assert entry["count"] == 8
+    assert entry["examples"] == sorted(dates)[:5]

@@ -22,6 +22,11 @@ from pathlib import Path, PurePosixPath
 BUNDLE_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12002227/supplementaryFiles"
 WORKBOOK_NAME = "pnas.2420343122.sd06.xlsx"
 PINNED_SHA256 = "d8e9f7777b329c810adde8b9f4a0f91a4d1a6211b760daeb9329ae6f36606daa"
+# A declared uncompressed size above this refuses the member before it is read. The real
+# workbook is 233,828 bytes (measured 2026-11-11), so this leaves a factor of about 21.
+# zipfile reads no more than the declared size, so a header that understates the size
+# cannot get past the cap and then inflate beyond it.
+MAX_MEMBER_BYTES = 5_000_000
 # Seconds without a byte before the download is abandoned.
 TIMEOUT = 120
 
@@ -57,6 +62,11 @@ def fetch(dest: Path) -> Path:
                     raise FetchRefused(
                         f"bundle member '{info.filename}' has a path that escapes the "
                         "destination; refusing the bundle"
+                    )
+                if info.file_size > MAX_MEMBER_BYTES:
+                    raise FetchRefused(
+                        f"bundle member '{info.filename}' declares {info.file_size} bytes, "
+                        f"over the {MAX_MEMBER_BYTES}-byte cap"
                     )
                 matches.append(info)
             if len(matches) != 1:
