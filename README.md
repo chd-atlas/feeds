@@ -24,7 +24,7 @@ or `uv run` removes it again). CI runners have AVX2 and use `uv run`.
 ```bash
 ruff check .
 ruff format --check .
-mypy --strict src
+mypy --strict src sources
 pytest
 ```
 
