@@ -392,7 +392,12 @@ def test_hvantk_provenance_is_required_and_must_agree_with_the_declared_release(
     sidecar = hvantk.with_name(hvantk.name + ".provenance.json")
     other = "b" * 40
     cases = [
-        ("no hvantk_release", {"built_by": {"host": "login01"}}, None, "hvantk_release"),
+        (
+            "no hvantk_release",
+            {"built_by": {"host": "login01"}},
+            None,
+            r'\["hvantk_release"\] is req',
+        ),
         ("no sidecar", {}, "missing", "sidecar.*missing or unreadable"),
         ("unreadable sidecar", {}, "garbage", "sidecar.*missing or unreadable"),
         ("version, not a commit", {}, {"builder_commit": "hvantk 0.6.0"}, "not a 40-hex commit"),
