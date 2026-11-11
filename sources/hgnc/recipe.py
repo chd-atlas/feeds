@@ -116,6 +116,16 @@ UNIPROT_PINS: Mapping[str, str] = {
 
 HPC_URL_FORMAT = "https://github.com/chd-atlas/feeds/tree/{commit}/sources/hgnc/hpc"
 
+# The complete-set column each hvantk field is renamed from (HGNC_GENE_FIELDS in
+# hvantk/skills/hgnc/shared/constants.py at 8683258d); the other fields keep their name.
+_RAW_COLUMN = {
+    "gene_symbol": "symbol",
+    "gene_name": "name",
+    "alias_symbols": "alias_symbol",
+    "prev_symbols": "prev_symbol",
+}
+_MISMATCH_EXAMPLES = 5
+
 _APPROVED = "Approved"
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _ARCHIVE_NAME = re.compile(r"hgnc_complete_set_(\d{4}-\d{2}-\d{2})\.txt")
@@ -180,10 +190,59 @@ def _read_raw(path: Path) -> pl.DataFrame:
     Its multi-value cells are quoted (``"P0DW28|P98175"``), unlike the hvantk export.
     """
     frame = pl.read_csv(path, separator="\t", infer_schema_length=0)
-    missing = [c for c in ("hgnc_id", "status") if c not in frame.columns]
+    needed = ["hgnc_id", "status", *(_RAW_COLUMN.get(f, f) for f in HVANTK_FIELDS)]
+    missing = sorted({c for c in needed if c not in frame.columns})
     if missing:
         raise PackageRefused(f"{path.name}: the complete set lacks column(s) {', '.join(missing)}")
     return frame
+
+
+def _tokens(cell: str | None) -> str | None:
+    """A raw complete-set cell as hvantk tokenizes a pipe-separated field.
+
+    hvantk/skills/hgnc/builder.py ``_split_pipe_tokens`` at 8683258d is
+    ``expr.replace('"', "").split("\\|").map(strip).filter(!= "")``, giving an empty
+    array for an empty or missing cell. Returned ``|``-joined, or None for no token.
+    """
+    if cell is None or cell == "":
+        return None
+    parts = [t.strip() for t in cell.replace('"', "").split("|")]
+    return "|".join(t for t in parts if t != "") or None
+
+
+def _cross_check(frame: pl.DataFrame, raw: pl.DataFrame) -> None:
+    """Refuse when a cell of the hvantk table is not what the complete set says.
+
+    hvantk is a dependency, not an authority: its 8683258d export once double-encoded
+    35 non-ASCII aliases (``RORα`` as ``RORÎ±``) and every other check passed. Each
+    cell the recipe reads (after percent-decoding, before the recipe's own rules) is
+    compared with the same gene's raw field: array fields normalised as hvantk
+    documents (``_tokens``), scalars as the raw text.
+    """
+    approved = raw.filter(pl.col("status").fill_null("") == _APPROVED)
+    by_gene = {r["hgnc_id"]: r for r in approved.iter_rows(named=True)}
+    found: list[str] = []
+    count = 0
+    for record in frame.iter_rows(named=True):
+        theirs = by_gene.get(record["hgnc_id"])
+        if theirs is None:
+            continue  # `_dropped` has already refused a gene the complete set lacks
+        for field in HVANTK_FIELDS:
+            wanted = theirs[_RAW_COLUMN.get(field, field)]
+            if field in HVANTK_ARRAY_FIELDS:
+                wanted = _tokens(wanted)
+            if record[field] != wanted:
+                count += 1
+                if len(found) < _MISMATCH_EXAMPLES:
+                    found.append(
+                        f"{record['hgnc_id']} {field}: hvantk {record[field]!r}, "
+                        f"complete set {wanted!r}"
+                    )
+    if count:
+        raise PackageRefused(
+            f"{count} cell(s) of the hvantk table differ from the complete set "
+            f"(showing {len(found)}): " + "; ".join(found)
+        )
 
 
 def _refseq(cell: str | None) -> str | None:
@@ -305,6 +364,8 @@ def build(
             f"pinned gene(s) {', '.join(sorted(wanted))} are not in the hvantk table; "
             "re-read UniProt and update UNIPROT_PINS"
         )
+
+    _cross_check(frame, raw_frame)
 
     rows: list[Sequence[str | None]] = []
     for record in frame.sort("hgnc_id").iter_rows(named=True):

@@ -23,22 +23,37 @@ HVANTK_COMMIT = "8683258deb7569572333cdf5e25a2d0ee1bf1c47"
 RECIPE_COMMIT = "a" * 40
 BUILT_BY = {"host": "login01", "hvantk_release": HVANTK_COMMIT}
 
-RAW_HEADER = "hgnc_id\tsymbol\tname\tstatus\tuniprot_ids\tmane_select"
-# The complete set quotes its multi-value cells; the hvantk export does not.
-RAW_ROWS = [
-    "HGNC:11604\tTBX5\tT-box transcription factor 5\tApproved\tQ99593"
-    '\t"ENST00000405440.7|NM_181486.4"',
-    'HGNC:9896\tRBM10\tRNA binding motif protein 10\tApproved\t"P0DW28|P98175"'
-    '\t"ENST00000377604.9|NM_005676.5"',
-    'HGNC:2488\tNKX2-5\tNK2 homeobox 5\tApproved\t"P52952|Q00000"\t"ENST00000329198.5|NM_004387.4"',
-    "HGNC:50001\tLINC00001\tlong intergenic non-protein coding RNA 1\tApproved\t\t",
-    "HGNC:50002\tTEST1\ttest gene 1\tApproved\tP12345\tENST00000999999.1",
-    # File order is the reverse of sorted order, and HGNC:52 appears twice (rows != ids).
-    "HGNC:51\tOLD1\told symbol\tSymbol Withdrawn\t\t",
-    "HGNC:52\tOLD2\told entry\tEntry Withdrawn\t\t",
-    "HGNC:52\tOLD2B\told entry again\tEntry Withdrawn\t\t",
-    "HGNC:53\tOLD3\tanother old entry\tEntry Withdrawn\t\t",
+RAW_HEADER = (
+    "hgnc_id\tsymbol\tname\tstatus\talias_symbol\tprev_symbol\tensembl_gene_id\tentrez_id"
+    "\tlocation\tuniprot_ids\tmane_select"
+)
+# File order is not sorted order.
+RAW_ORDER = ["HGNC:11604", "HGNC:9896", "HGNC:2488", "HGNC:50001", "HGNC:50002"]
+# Withdrawn rows; HGNC:52 appears twice (rows != ids).
+WITHDRAWN = [
+    "HGNC:51\tOLD1\told symbol\tSymbol Withdrawn" + "\t" * 7,
+    "HGNC:52\tOLD2\told entry\tEntry Withdrawn" + "\t" * 7,
+    "HGNC:52\tOLD2B\told entry again\tEntry Withdrawn" + "\t" * 7,
+    "HGNC:53\tOLD3\tanother old entry\tEntry Withdrawn" + "\t" * 7,
 ]
+
+
+def _raw_for(hvantk_rows: list[Any]) -> list[str]:
+    """The complete-set rows that agree with ``hvantk_rows``.
+
+    The complete set quotes its multi-value cells; the hvantk export does not.
+    """
+    by_id = {r[0]: r for r in hvantk_rows}
+    lines = []
+    for gene in RAW_ORDER:
+        if gene not in by_id:
+            continue
+        h = by_id[gene]
+        cells = [h[0], h[1], h[2], "Approved", h[3], h[4], h[5], h[6], h[7], h[8], h[9]]
+        lines.append("\t".join(f'"{c}"' if "|" in c else c for c in cells))
+    return [*lines, *WITHDRAWN]
+
+
 HVANTK_HEADER = "\t".join(recipe.HVANTK_FIELDS)
 HVANTK_ROWS = [
     # hgnc_id gene_symbol gene_name alias_symbols prev_symbols ensembl entrez location
@@ -104,6 +119,9 @@ HVANTK_ROWS = [
         "",
     ],
 ]
+
+
+RAW_ROWS = _raw_for(HVANTK_ROWS)
 
 
 def _tsv(path: Path, header: str, rows: list[Any]) -> Path:
@@ -298,7 +316,7 @@ def test_a_pin_hgnc_no_longer_lists_refuses_the_build(
 ) -> None:
     rows = [list(r) for r in HVANTK_ROWS]
     next(r for r in rows if r[0] == "HGNC:9896")[8] = cell
-    hvantk, raw = _inputs(tmp_path, hvantk_rows=rows)
+    hvantk, raw = _inputs(tmp_path, hvantk_rows=rows, raw_rows=_raw_for(rows))
     with pytest.raises(PackageRefused, match=message):
         _build(tmp_path, hvantk, raw)
     assert not (tmp_path / "pkg").exists()
@@ -359,8 +377,8 @@ def test_the_sbatch_exports_exactly_the_fields_the_recipe_reads() -> None:
 
 def test_a_quoted_hvantk_cell_is_refused_not_unquoted(tmp_path: Path) -> None:
     rows = [list(r) for r in HVANTK_ROWS]
-    rows[0][2] = '"quoted" name'
-    hvantk, raw = _inputs(tmp_path, hvantk_rows=rows)
+    rows[0][2] = 'a "quoted" name'
+    hvantk, raw = _inputs(tmp_path, hvantk_rows=rows, raw_rows=_raw_for(rows))
     with pytest.raises(PackageRefused, match="holds a double quote"):
         _build(tmp_path, hvantk, raw)
 
@@ -441,7 +459,9 @@ def _with_cell(column: str, cell: str) -> list[list[str]]:
 def test_array_elements_are_percent_decoded_and_scalars_are_not(tmp_path: Path) -> None:
     rows = _with_cell("alias_symbols", "A%25B|C%2525|plain")
     rows[0][2] = "name 100%25 sure"  # gene_name is a scalar: written as it came
-    hvantk, raw = _inputs(tmp_path, hvantk_rows=rows)
+    decoded = [list(r) for r in rows]
+    next(r for r in decoded if r[0] == "HGNC:50002")[3] = "A%B|C%25|plain"
+    hvantk, raw = _inputs(tmp_path, hvantk_rows=rows, raw_rows=_raw_for(decoded))
     got = next(r for r in _rows(_build(tmp_path, hvantk, raw))[1:] if r[0] == "HGNC:50002")
     assert got[3] == "A%B|C%25|plain"
     assert got[2] == "name 100%25 sure"
@@ -464,3 +484,48 @@ def test_an_ambiguous_or_malformed_escape_is_refused_by_column_and_gene(
     with pytest.raises(PackageRefused, match=rf"HGNC:50002, column {column}: .*{message}"):
         _build(tmp_path, hvantk, raw)
     assert not (tmp_path / "pkg").exists()
+
+
+def test_a_cell_that_differs_from_the_complete_set_is_refused_by_gene_and_column(
+    tmp_path: Path,
+) -> None:
+    """hvantk 8683258d wrote 'RORα' as 'RORÎ±'; every other check passed."""
+    rows = [list(r) for r in HVANTK_ROWS]
+    next(r for r in rows if r[0] == "HGNC:50002")[3] = "RORÎ±|x"
+    next(r for r in rows if r[0] == "HGNC:11604")[2] = "T-box transcription factor 6"
+    good = [list(r) for r in HVANTK_ROWS]
+    next(r for r in good if r[0] == "HGNC:50002")[3] = "RORα|x"
+    hvantk, raw = _inputs(tmp_path, hvantk_rows=rows, raw_rows=_raw_for(good))
+    with pytest.raises(PackageRefused) as caught:
+        _build(tmp_path, hvantk, raw)
+    message = str(caught.value)
+    assert message.startswith("2 cell(s) of the hvantk table differ from the complete set")
+    assert "HGNC:50002 alias_symbols: hvantk 'RORÎ±|x', complete set 'RORα|x'" in message
+    assert "HGNC:11604 gene_name" in message
+    assert not (tmp_path / "pkg").exists()
+
+
+def test_the_cross_check_normalises_as_hvantk_does_and_shows_five_examples(
+    tmp_path: Path,
+) -> None:
+    # Quotes, surrounding spaces and empty tokens in the raw cell are not mismatches.
+    good = [list(r) for r in HVANTK_ROWS]
+    raw_rows = _raw_for(good)
+    at = next(i for i, line in enumerate(raw_rows) if line.startswith("HGNC:50002"))
+    cells = raw_rows[at].split("\t")
+    cells[4] = ' "a| b ||c" '.strip()
+    raw_rows[at] = "\t".join(cells)
+    rows = [list(r) for r in good]
+    next(r for r in rows if r[0] == "HGNC:50002")[3] = "a|b|c"
+    (tmp_path / "ok").mkdir()
+    (tmp_path / "bad").mkdir()
+    hvantk, raw = _inputs(tmp_path / "ok", hvantk_rows=rows, raw_rows=raw_rows)
+    _build(tmp_path / "ok", hvantk, raw)
+
+    bad = [list(r) for r in good]
+    for r in bad:
+        r[1] = r[1] + "x"  # 5 genes: gene_symbol differs in each
+    hvantk, raw = _inputs(tmp_path / "bad", hvantk_rows=bad, raw_rows=_raw_for(good))
+    with pytest.raises(PackageRefused, match=r"5 cell\(s\).*showing 5") as caught:
+        _build(tmp_path / "bad", hvantk, raw)
+    assert str(caught.value).count("gene_symbol:") == 5

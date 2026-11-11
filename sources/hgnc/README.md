@@ -123,3 +123,15 @@ export writes array elements percent-encoded (`%` as `%25`, `|` as `%7C`), flatt
 each element, and refuses (naming column and gene) a `%` not followed by `25` or `7C` and
 a decoded element holding `|`. Scalar columns are never decoded. The `fields` selection
 stays so the package input carries only what the recipe reads.
+
+## The cross-check against the complete set
+
+`build` compares every cell it reads from the hvantk table (after percent-decoding, before
+the recipe's own rules: the RBM10 pin and the `NM_` half) with the same gene's field in the
+complete set it already reads: array fields normalised as hvantk's `_split_pipe_tokens`
+does (strip quotes, split on `|`, strip, drop empty tokens), scalars as the raw text. Any
+mismatch refuses the build, naming gene, column and both values (five examples and the
+count). It guards against hvantk being wrong in a way no other check sees, and it found
+such a bug: hvantk 8683258d double-encoded 35 non-ASCII aliases (`RORα` written as
+`RORÎ±`, because Hail's text mode reads ISO-8859-1), while the 185-gene parity check,
+the row accounting and the schema all passed.
