@@ -17,12 +17,16 @@ Rules, each of which guards a silent wrong claim:
   does a pinned gene missing from the table.
 * The rows hvantk dropped (it keeps ``Approved`` genes only) must equal the
   complete set's rows with another status, gene for gene. They are published in
-  ``dropped`` with their count, or the build refuses.
+  ``dropped`` with their count, or the build refuses. Measured 2026-11-11 (review
+  of this recipe): the live set (45,387 rows) and the 2026-10-06 archive (45,233
+  rows) hold only Approved rows, so ``dropped`` is ``[]`` on real data and this
+  guard is exercised by fixtures alone.
 """
 
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Mapping, Sequence
 from datetime import date
 from pathlib import Path
@@ -98,6 +102,8 @@ UNIPROT_PINS: Mapping[str, str] = {
 }
 
 _APPROVED = "Approved"
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_ARCHIVE_NAME = re.compile(r"hgnc_complete_set_(\d{4}-\d{2}-\d{2})\.txt")
 _EXAMPLES = 5
 
 
@@ -169,8 +175,9 @@ def _dropped(raw: pl.DataFrame, kept: set[str], rows_kept: int) -> list[dict[str
             f"(e.g. {extra[:3]})"
         )
     entries: list[dict[str, Any]] = []
-    for label in sorted(set(status.to_list()) - {_APPROVED}):
-        gone = sorted(i for i, s in zip(ids, status, strict=True) if s == label and i is not None)
+    # dict.fromkeys keeps raw-file order and no set decides it; `sorted` then fixes the output.
+    for label in sorted(x for x in dict.fromkeys(status.to_list()) if x != _APPROVED):
+        gone = sorted({i for i, s in zip(ids, status, strict=True) if s == label and i is not None})
         shown = label or "(blank)"
         entries.append(
             {
@@ -203,6 +210,13 @@ def build(
     ``release`` is the complete set's archive date (e.g. ``2026-10-16``) and is
     the package version at revision 1.
     """
+    if not _ISO_DATE.fullmatch(release):
+        raise PackageRefused(f"release '{release}' is not an ISO date (YYYY-MM-DD)")
+    named = _ARCHIVE_NAME.fullmatch(raw.name)
+    if named and named.group(1) != release:
+        raise PackageRefused(
+            f"{raw.name} is the {named.group(1)} archive but release is '{release}'"
+        )
     source = load_source(HERE / "source.yaml")
     frame = _read_hvantk(hvantk_tsv)
     raw_frame = _read_raw(raw)

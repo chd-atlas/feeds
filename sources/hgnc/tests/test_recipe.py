@@ -2,7 +2,8 @@
 
 The expected rows are literals, written to equal what the atlas's
 ``scripts/convert_hgnc.py`` writes for the same raw rows (null stays an empty
-cell, the RefSeq half is chosen by prefix, an unpinned list is kept verbatim).
+cell, the RefSeq half is chosen by prefix), except the unpinned list, which the
+converter refuses and the recipe keeps verbatim (the atlas's decision 3).
 """
 
 import gzip
@@ -30,8 +31,10 @@ RAW_ROWS = [
     'HGNC:2488\tNKX2-5\tNK2 homeobox 5\tApproved\t"P52952|Q00000"\t"ENST00000329198.5|NM_004387.4"',
     "HGNC:50001\tLINC00001\tlong intergenic non-protein coding RNA 1\tApproved\t\t",
     "HGNC:50002\tTEST1\ttest gene 1\tApproved\tP12345\tENST00000999999.1",
+    # File order is the reverse of sorted order, and HGNC:52 appears twice (rows != ids).
     "HGNC:51\tOLD1\told symbol\tSymbol Withdrawn\t\t",
     "HGNC:52\tOLD2\told entry\tEntry Withdrawn\t\t",
+    "HGNC:52\tOLD2B\told entry again\tEntry Withdrawn\t\t",
     "HGNC:53\tOLD3\tanother old entry\tEntry Withdrawn\t\t",
 ]
 HVANTK_HEADER = "\t".join(recipe.HVANTK_FIELDS)
@@ -220,11 +223,11 @@ def test_the_package_rows_are_the_rules_applied(tmp_path: Path) -> None:
             "upstream_release": "2026-10-16",
         }
     ]
-    assert manifest["input_counts"] == {"rows": 8, "genes": 8}
+    assert manifest["input_counts"] == {"rows": 9, "genes": 8}
     assert manifest["dropped"] == [
         {
             "reason": "status is Entry Withdrawn, not Approved; hvantk keeps Approved genes only",
-            "count": 2,
+            "count": 3,
             "examples": ["HGNC:52", "HGNC:53"],
         },
         {
@@ -307,7 +310,7 @@ def test_rows_hvantk_dropped_must_be_accounted_for(tmp_path: Path) -> None:
 
     # The complete set repeating an Approved row would count as a dropped one.
     hvantk, raw = _inputs(tmp_path, raw_rows=[*RAW_ROWS, RAW_ROWS[0]])
-    with pytest.raises(PackageRefused, match=r"4 complete-set rows are absent.*but 3 are not"):
+    with pytest.raises(PackageRefused, match=r"5 complete-set rows are absent.*but 4 are not"):
         _build(tmp_path, hvantk, raw)
     assert not (tmp_path / "pkg").exists()
 
@@ -328,3 +331,31 @@ def test_the_sbatch_exports_exactly_the_fields_the_recipe_reads() -> None:
     assert tuple(match.group(1).split(",")) == recipe.HVANTK_FIELDS
     assert "--mail-user" not in re.sub(r"^#.*$", "", sbatch, flags=re.M)
     assert not re.search(r"^#SBATCH --mail-user", sbatch, re.M)
+
+
+def test_a_quoted_hvantk_cell_is_refused_not_unquoted(tmp_path: Path) -> None:
+    rows = [list(r) for r in HVANTK_ROWS]
+    rows[0][2] = '"quoted" name'
+    hvantk, raw = _inputs(tmp_path, hvantk_rows=rows)
+    with pytest.raises(PackageRefused, match="opens with a double quote"):
+        _build(tmp_path, hvantk, raw)
+
+
+@pytest.mark.parametrize(
+    ("raw_name", "release", "message"),
+    [
+        ("hgnc_complete_set_2026-10-06.txt", "2026-10-16", "2026-10-06 archive.*2026-10-16"),
+        ("hgnc_complete_set.txt", "October 2026", "not an ISO date"),
+        ("hgnc_complete_set.txt", "2026-10-1", "not an ISO date"),
+    ],
+)
+def test_the_release_is_an_iso_date_and_matches_an_archive_name(
+    tmp_path: Path, raw_name: str, release: str, message: str
+) -> None:
+    hvantk, raw = _inputs(tmp_path)
+    renamed = raw.rename(tmp_path / raw_name)
+    with pytest.raises(PackageRefused, match=message):
+        _build(tmp_path, hvantk, renamed, release=release)
+    ok = tmp_path / "hgnc_complete_set_2026-10-16.txt"
+    renamed.rename(ok)
+    _build(tmp_path, hvantk, ok, release="2026-10-16")

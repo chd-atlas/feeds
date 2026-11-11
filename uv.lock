@@ -120,7 +120,7 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
     { name = "types-jsonschema" },
-    { name = "types-pyyaml", specifier = ">=6.0.12.20261111" },
+    { name = "types-pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]
