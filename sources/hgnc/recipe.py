@@ -48,8 +48,9 @@ from feeds.version import package_version
 HERE = Path(__file__).resolve().parent
 
 # The hvantk fields this recipe reads, in the `fields` list the sbatch passes to
-# `hvantk reprocess` (hvantk's TSV export refuses the struct column `lsdb`, so the
-# export must name its columns). test_recipe checks the sbatch carries exactly these.
+# `hvantk reprocess`. At hvantk 8683258d the export flattens the struct-array column
+# `lsdb` instead of refusing it; the selection stays so the package input carries only
+# what this recipe reads. test_recipe checks the sbatch carries exactly these.
 HVANTK_FIELDS = (
     "hgnc_id",
     "gene_symbol",
@@ -62,6 +63,11 @@ HVANTK_FIELDS = (
     "uniprot_ids",
     "mane_select",
 )
+
+# The hvantk fields that are arrays. hvantk's TSV writer joins an array's elements with
+# `|` after writing `%` as `%25` and `|` as `%7C` inside each element, so a reader splits
+# on `|` and percent-decodes each element (hvantk/core/io/_tsv.py at 8683258d).
+HVANTK_ARRAY_FIELDS = ("alias_symbols", "prev_symbols", "uniprot_ids", "mane_select")
 
 # `genes` v2 columns in the atlas's order, each with the hvantk field it copies.
 GENES_COLUMNS = (
@@ -116,6 +122,35 @@ _ARCHIVE_NAME = re.compile(r"hgnc_complete_set_(\d{4}-\d{2}-\d{2})\.txt")
 _EXAMPLES = 5
 
 
+_PERCENT = re.compile(r"%(.?.?)")
+_DECODED = {"25": "%", "7C": "|"}
+
+
+def _decode_cell(cell: str | None, column: str, gene: str | None) -> str | None:
+    """Percent-decode each ``|``-separated element of an array cell, refusing ambiguity.
+
+    A ``%`` not followed by ``25`` or ``7C`` is malformed; an element that decodes to
+    something holding ``|`` would make the atlas's ``|``-joined cell ambiguous.
+    """
+    if cell is None:
+        return None
+    elements = []
+    for element in cell.split("|"):
+        for escape in _PERCENT.findall(element):
+            if escape not in _DECODED:
+                raise PackageRefused(
+                    f"{gene}, column {column}: '%{escape}' is not a hvantk escape (%25, %7C)"
+                )
+        decoded = _PERCENT.sub(lambda m: _DECODED[m.group(1)], element)
+        if "|" in decoded:
+            raise PackageRefused(
+                f"{gene}, column {column}: element {element!r} decodes to text holding '|', "
+                "which would make the |-joined cell ambiguous"
+            )
+        elements.append(decoded)
+    return "|".join(elements)
+
+
 def _read_hvantk(path: Path) -> pl.DataFrame:
     """The hvantk export as strings, unquoted and untyped: no cell is retyped."""
     frame = pl.read_csv(path, separator="\t", quote_char=None, infer_schema=False)
@@ -124,6 +159,17 @@ def _read_hvantk(path: Path) -> pl.DataFrame:
         raise PackageRefused(
             f"{path.name}: the hvantk table lacks column(s) {', '.join(missing)}; "
             f"has {', '.join(frame.columns)}"
+        )
+    for column in HVANTK_ARRAY_FIELDS:
+        frame = frame.with_columns(
+            pl.Series(
+                column,
+                [
+                    _decode_cell(cell, column, gene)
+                    for cell, gene in zip(frame[column], frame["hgnc_id"], strict=True)
+                ],
+                dtype=pl.String,
+            )
         )
     return frame
 

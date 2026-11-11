@@ -33,9 +33,10 @@
 # settings below follow hvantk's skills/hpc-hail-job template: local[cpus], a
 # driver capped at 80% of the memory request, node-local scratch.
 #
-# `fields` names the columns the export keeps: the TSV export refuses `lsdb`
-# (array<struct>), which the builder otherwise keeps. The list is exactly
-# HVANTK_FIELDS in recipe.py; a test compares the two.
+# `fields` names the columns the export keeps. At hvantk 8683258d the export flattens
+# the struct-array column `lsdb` into `lsdb.*` array fields rather than refusing it; the
+# selection stays so the package input carries only what recipe.py reads. The list is
+# exactly HVANTK_FIELDS in recipe.py; a test compares the two.
 
 set -euo pipefail
 

@@ -19,7 +19,7 @@ import pytest
 from feeds.package import PackageRefused
 from sources.hgnc import recipe
 
-HVANTK_COMMIT = "4c90a241" + "0" * 32
+HVANTK_COMMIT = "8683258deb7569572333cdf5e25a2d0ee1bf1c47"
 RECIPE_COMMIT = "a" * 40
 BUILT_BY = {"host": "login01", "hvantk_release": HVANTK_COMMIT}
 
@@ -117,7 +117,7 @@ def _tsv(path: Path, header: str, rows: list[Any]) -> Path:
 
 
 def _sidecar(table: Path, **over: Any) -> None:
-    """hvantk's ``<output>.provenance.json`` (hvantk docs, guide/usage.md at 4c90a241)."""
+    """hvantk's ``<output>.provenance.json`` (hvantk 8683258d, guide/usage.md)."""
     record: dict[str, Any] = {
         "plugin": "hgnc",
         "dataset": "hgnc:lookup",
@@ -430,3 +430,37 @@ def test_a_supplied_recipe_commit_must_equal_the_builds_own(tmp_path: Path) -> N
         _build(tmp_path / "b", hvantk, raw, built_by={**BUILT_BY, "recipe_commit": "b" * 40})
     with pytest.raises(PackageRefused, match="40-hex"):
         _build(tmp_path / "c", hvantk, raw, commit_of=lambda: "main")
+
+
+def _with_cell(column: str, cell: str) -> list[list[str]]:
+    rows = [list(r) for r in HVANTK_ROWS]
+    next(r for r in rows if r[0] == "HGNC:50002")[recipe.HVANTK_FIELDS.index(column)] = cell
+    return rows
+
+
+def test_array_elements_are_percent_decoded_and_scalars_are_not(tmp_path: Path) -> None:
+    rows = _with_cell("alias_symbols", "A%25B|C%2525|plain")
+    rows[0][2] = "name 100%25 sure"  # gene_name is a scalar: written as it came
+    hvantk, raw = _inputs(tmp_path, hvantk_rows=rows)
+    got = next(r for r in _rows(_build(tmp_path, hvantk, raw))[1:] if r[0] == "HGNC:50002")
+    assert got[3] == "A%B|C%25|plain"
+    assert got[2] == "name 100%25 sure"
+
+
+@pytest.mark.parametrize(
+    ("column", "cell", "message"),
+    [
+        ("prev_symbols", "A%7CB", "decodes to text holding"),
+        ("uniprot_ids", "P1%zz", "'%zz' is not a hvantk escape"),
+        ("mane_select", "NM_1%", "'%' is not a hvantk escape"),
+        ("alias_symbols", "x|%2", "'%2' is not a hvantk escape"),
+        ("alias_symbols", "x%7c", "'%7c' is not a hvantk escape"),
+    ],
+)
+def test_an_ambiguous_or_malformed_escape_is_refused_by_column_and_gene(
+    tmp_path: Path, column: str, cell: str, message: str
+) -> None:
+    hvantk, raw = _inputs(tmp_path, hvantk_rows=_with_cell(column, cell))
+    with pytest.raises(PackageRefused, match=rf"HGNC:50002, column {column}: .*{message}"):
+        _build(tmp_path, hvantk, raw)
+    assert not (tmp_path / "pkg").exists()

@@ -112,6 +112,14 @@ measurements (its RBM10 and MANE figures were taken on 2026-10-25 over the 2026-
 ## Tests
 
 `pytest sources/hgnc`: five synthetic genes, no network. On real data (review,
-2026-11-11), hvantk at 4c90a241 run on the live set (45,387 rows) and on the
+2026-11-11, before hvantk's TSV writer was rewritten), hvantk at 4c90a241 run on the live set (45,387 rows) and on the
 2026-10-06 archive (45,233 rows), through this recipe and then the atlas's own
 ingest, gave a `genes.tsv` byte-identical to `scripts/convert_hgnc.py`'s.
+
+With hvantk at 8683258deb7569572333cdf5e25a2d0ee1bf1c47 (bigbio/hvantk#482 as merged) the
+export writes array elements percent-encoded (`%` as `%25`, `|` as `%7C`), flattens
+`lsdb` instead of refusing it and sorts the rows. The recipe splits each array column
+(`alias_symbols`, `prev_symbols`, `uniprot_ids`, `mane_select`) on `|`, percent-decodes
+each element, and refuses (naming column and gene) a `%` not followed by `25` or `7C` and
+a decoded element holding `|`. Scalar columns are never decoded. The `fields` selection
+stays so the package input carries only what the recipe reads.
