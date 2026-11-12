@@ -1,0 +1,20 @@
+name: >-
+  EMBL-EBI Expression Atlas, experiment E-MTAB-6814 ("Human RNA-seq
+  time-series of the development of seven major organs"), the
+  per-assay-group TPM matrix E-MTAB-6814-tpms.tsv and its
+  E-MTAB-6814-configuration.xml
+url: https://www.ebi.ac.uk/gxa/experiments/E-MTAB-6814/Results
+licence: EMBL-EBI Terms of Use
+redistribution: permitted_with_attribution
+# As the atlas's mirrors/sources.yaml records it: verified against EMBL-EBI's
+# Terms of Use on 2026-08-19. No CC licence is asserted; EMBL-EBI's own licensing
+# page states that no single licence is mandated across resources, and this
+# experiment's IDF declares none.
+licence_evidence: >-
+  Verified against EMBL-EBI's Terms of Use on 2026-08-19: "EMBL-EBI itself places
+  no additional restrictions on the use or redistribution of the data available
+  via its Data Resources and Tools other than those provided by the original data
+  owners", and EMBL-EBI "expects attribution ... in accordance with good
+  scientific practice". No CC licence is asserted: EMBL-EBI's own licensing page
+  states that no single licence is mandated across resources, and this
+  experiment's IDF declares none.

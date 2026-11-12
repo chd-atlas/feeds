@@ -1,0 +1,14 @@
+name: >-
+  Audain et al. 2021, PLoS Genetics 17(7) e1009679, S6 Table Sheet A
+  (gene-based case/control CNV-deletion permutation testing, PLINK)
+url: https://journals.plos.org/plosgenetics/article/file?id=10.1371/journal.pgen.1009679.s011&type=supplementary
+licence: CC0-1.0
+redistribution: permitted
+# Quoted as the atlas's mirrors/sources.yaml records it:
+licence_evidence: >-
+  "This is an open access article, free of all copyright, and may be freely
+  reproduced, distributed, transmitted, modified, built upon, or otherwise
+  used by anyone for any lawful purpose. The work is made available under
+  the Creative Commons CC0 public domain dedication." -- the article's own
+  licence statement, which covers its supplementary material. CC0, not the
+  CC BY that PLOS uses for some titles: read off this article, not assumed.

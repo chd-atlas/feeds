@@ -1,0 +1,12 @@
+name: >-
+  Audain et al. 2026, npj Genomic Medicine 11, Supplementary Data 3
+  (per-gene rare variant burden, aCHD / sCHD / nsCHD versus controls)
+url: https://static-content.springer.com/esm/art%3A10.1038%2Fs41525-026-00582-z/MediaObjects/41525_2026_582_MOESM4_ESM.xlsx
+licence: CC-BY-4.0
+redistribution: permitted_with_attribution
+# Quoted as the atlas's mirrors/sources.yaml records it:
+licence_evidence: >-
+  "This article is licensed under a Creative Commons Attribution 4.0
+  International License ... To view a copy of this licence, visit
+  http://creativecommons.org/licenses/by/4.0/" -- the article's own licence
+  statement, which covers its supplementary material.
