@@ -54,3 +54,12 @@ def test_a_missing_sheet_is_refused(tmp_path: Path) -> None:
     path = write_workbook(tmp_path / "w.xlsx", ROWS, "S")
     with pytest.raises(ValueError, match="no sheet named 'T'"):
         xlsx.read_sheet_rows(path, "T")
+
+
+def test_a_repeated_header_is_refused_but_repeated_blanks_are_not(tmp_path: Path) -> None:
+    path = write_workbook(tmp_path / "w.xlsx", [["a", "b", "a"], ["1", "2", "3"]], "S")
+    with pytest.raises(ValueError, match=r"'S'.*'a'"):
+        xlsx.read_sheet(path, "S")
+    blanks = write_workbook(tmp_path / "x.xlsx", [["a", "", "", "d"], ["1", "2", "3", "4"]], "S")
+    (record,) = xlsx.read_sheet(blanks, "S")
+    assert (record["a"], record["d"]) == ("1", "4")

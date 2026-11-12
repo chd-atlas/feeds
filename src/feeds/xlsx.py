@@ -50,6 +50,15 @@ def read_sheet(path: Path, name: str) -> list[dict[str, str]]:
     """
     rows = read_sheet_rows(path, name)
     header = rows[0]
+    named = [h for h in header if h]
+    repeated = sorted({h for h in named if named.count(h) > 1})
+    if repeated:
+        # A dict keyed on the header would keep only the last of two columns
+        # sharing a name, under a package that builds.
+        raise ValueError(
+            f"sheet {name!r} repeats the header {', '.join(map(repr, repeated))}; "
+            "a record keyed on it would silently drop all but one of those columns"
+        )
     return [
         {name: (row[i] if i < len(row) else "") for i, name in enumerate(header)}
         for row in rows[1:]
