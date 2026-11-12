@@ -122,6 +122,12 @@ def read_rows(tsv: Path) -> tuple[list[tuple[str, ...]], list[dict[str, Any]]]:
 
     Pure: no package is written. Empty cells are ``""``.
     """
+    rows, dropped, _ = _read(tsv)
+    return rows, dropped
+
+
+def _read(tsv: Path) -> tuple[list[tuple[str, ...]], list[dict[str, Any]], set[str]]:
+    """``read_rows`` plus the distinct ``gene_curie`` values of every record read."""
     frame = pl.read_csv(tsv, separator="\t", infer_schema_length=0)
     missing = sorted(set(_COLUMNS) - set(frame.columns))
     if missing:
@@ -129,6 +135,7 @@ def read_rows(tsv: Path) -> tuple[list[tuple[str, ...]], list[dict[str, Any]]]:
     records = frame.select(list(_COLUMNS)).fill_null("").rows()
     kept: list[tuple[str, ...]] = []
     outside: list[str] = []
+    genes_read = {record[1] for record in records if record[1]}
     for record in records:
         row = tuple(record)
         if _HGNC.fullmatch(row[1]) and _MONDO.fullmatch(row[3]):
@@ -147,13 +154,14 @@ def read_rows(tsv: Path) -> tuple[list[tuple[str, ...]], list[dict[str, Any]]]:
                 "examples": sorted(outside)[:_EXAMPLES],
             }
         )
-    return kept, dropped
+    return kept, dropped, genes_read
 
 
 def _write(
     rows: list[tuple[str, ...]],
     *,
     dropped: list[dict[str, Any]],
+    genes_read: set[str],
     inputs: list[dict[str, Any]],
     retrieved_on: date,
     revision: int,
@@ -171,7 +179,13 @@ def _write(
         coverage="every_gene",
         tables=[TableOut("gencc_submissions", 1, ORDER, cells, "gene")],
         inputs=inputs,
-        input_counts={"rows": len(rows), "genes": len({row[1] for row in rows})},
+        # Decision 4: every data record read, kept or dropped. ``genes`` is the distinct
+        # non-empty gene_curie over those same records, so a dropped record's gene cell
+        # (e.g. an Ensembl id) is counted; rows_in == table rows + sum(dropped counts).
+        input_counts={
+            "rows": len(rows) + sum(entry["count"] for entry in dropped),
+            "genes": len(genes_read),
+        },
         dropped=dropped,
         built_by=built_by,
         source={
@@ -201,11 +215,12 @@ def build(
     for a recipe change or a rebuild whose ``manifest.json`` bytes differ.
     """
     built_by, _ = stamp(built_by, commit_of)
-    rows, dropped = read_rows(tsv)
+    rows, dropped, genes_read = _read(tsv)
     sha256 = hashlib.sha256(tsv.read_bytes()).hexdigest()
     return _write(
         rows,
         dropped=dropped,
+        genes_read=genes_read,
         inputs=[
             {
                 "name": tsv.name,
@@ -262,6 +277,7 @@ def bootstrap(
     return _write(
         rows,
         dropped=[],
+        genes_read={row[1] for row in rows},
         inputs=[
             {
                 "name": MIRROR_NAME,

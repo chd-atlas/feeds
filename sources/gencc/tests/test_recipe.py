@@ -145,6 +145,40 @@ def test_rows_follow_table_order_and_the_key_and_the_package_states_its_origin(
     assert table[0] == COLUMNS and len(table) == 4
 
 
+def test_the_sort_key_is_gene_disease_moi_submitter_then_sgc_id(tmp_path: Path) -> None:
+    """Each key part breaks a tie against the sgc_id order, so none can be dropped."""
+    lines = (
+        # gene breaks the tie: HGNC:1 < HGNC:2 although its sgc_id is larger.
+        _line("SGC-90", "HGNC:2", "MONDO:0000001", "A", moi_title="AD"),
+        _line("SGC-91", "HGNC:1", "MONDO:0000009", "A", moi_title="AD"),
+        # disease: same gene, MONDO:...2 < MONDO:...3 although sgc_id is opposite.
+        _line("SGC-80", "HGNC:3", "MONDO:0000003", "A", moi_title="AD"),
+        _line("SGC-81", "HGNC:3", "MONDO:0000002", "A", moi_title="AD"),
+        # moi: same gene and disease, "AD" < "AR" although sgc_id is opposite.
+        _line("SGC-70", "HGNC:4", "MONDO:0000001", "A", moi_title="AR"),
+        _line("SGC-71", "HGNC:4", "MONDO:0000001", "A", moi_title="AD"),
+        # submitter: same gene/disease/moi, "A" < "B" although sgc_id is opposite.
+        _line("SGC-60", "HGNC:5", "MONDO:0000001", "B", moi_title="AD"),
+        _line("SGC-61", "HGNC:5", "MONDO:0000001", "A", moi_title="AD"),
+        # sgc_id: everything else equal.
+        _line("SGC-51", "HGNC:6", "MONDO:0000001", "A", moi_title="AD"),
+        _line("SGC-50", "HGNC:6", "MONDO:0000001", "A", moi_title="AD"),
+    )
+    rows, _ = recipe.read_rows(_tsv(tmp_path, *lines))
+    assert [r[0] for r in rows] == [
+        "SGC-91",
+        "SGC-90",
+        "SGC-81",
+        "SGC-80",
+        "SGC-71",
+        "SGC-70",
+        "SGC-61",
+        "SGC-60",
+        "SGC-50",
+        "SGC-51",
+    ]
+
+
 def test_a_row_outside_the_curie_forms_is_dropped_and_counted(tmp_path: Path) -> None:
     path = _tsv(
         tmp_path,
@@ -163,9 +197,13 @@ def test_a_row_outside_the_curie_forms_is_dropped_and_counted(tmp_path: Path) ->
         out=tmp_path / "pkg",
         commit_of=lambda: RECIPE_COMMIT,
     )
-    manifest, _ = _read_package(out)
+    manifest, table = _read_package(out)
     assert manifest["dropped"][0]["count"] == 2  # type: ignore[index]
-    assert manifest["input_counts"] == {"rows": 3, "genes": 2}
+    # 5 data records read, 2 dropped, 3 written; genes over every record read:
+    # HGNC:11604, HGNC:4173, ENSG1, HGNC:5.
+    counts = manifest["input_counts"]
+    assert counts == {"rows": 5, "genes": 4}
+    assert counts["rows"] == len(table) - 1 + sum(d["count"] for d in manifest["dropped"])  # type: ignore[index,union-attr]
 
 
 def test_a_carried_cell_with_a_quote_refuses_naming_the_record(tmp_path: Path) -> None:
