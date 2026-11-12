@@ -118,3 +118,23 @@ def test_a_local_download_is_the_pinned_one() -> None:
     if not path.is_file():
         pytest.skip(f"{path} is not present (gitignored; a curator's copy)")
     assert hashlib.sha256(path.read_bytes()).hexdigest() == recipe.PINNED_SHA256
+
+
+def test_a_repeated_pair_is_accounted_for_in_input_counts_and_dropped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _sssom(
+        tmp_path,
+        ("MONDO:0000001", "skos:exactMatch", "OMIM:100"),
+        ("MONDO:0000001", "skos:exactMatch", "OMIM:100"),
+        ("MONDO:0000002", "skos:exactMatch", "Orphanet:3"),
+        ("MONDO:0000002", "skos:closeMatch", "Orphanet:4"),  # not carried: neither row nor drop
+    )
+    monkeypatch.setattr(recipe, "PINNED_SHA256", hashlib.sha256(path.read_bytes()).hexdigest())
+    out = recipe.build(
+        path, revision=1, built_by=BUILT_BY, out=tmp_path / "pkg", commit_of=lambda: RECIPE_COMMIT
+    )
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    # Three carried matches read, two distinct rows, one repeat.
+    assert manifest["input_counts"] == {"rows": 3}
+    assert manifest["dropped"] == [{"reason": "pair repeated in the file", "count": 1}]

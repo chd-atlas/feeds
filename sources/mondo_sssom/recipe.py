@@ -58,6 +58,9 @@ def read_rows(sssom: Path) -> tuple[list[tuple[str, ...]], int]:
 
     Pure: no package is written, and the sha256 pin is not checked.
     """
+    # QUOTE_NONE, unlike the converter's default quoting: SSSOM cells are unquoted (the
+    # pinned file holds 0 ``"``), and default quoting could merge records across a stray
+    # quote where QUOTE_NONE cannot. A quote in a carried cell is refused below.
     reader = csv.DictReader(_body(sssom), delimiter="\t", quoting=csv.QUOTE_NONE)
     pairs: list[tuple[str, str]] = []
     for record in reader:
