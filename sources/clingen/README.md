@@ -13,6 +13,48 @@ Two entry points in `recipe.py`:
   download cannot be fetched again. It accepts only the file with sha256
   `b4c89cb6...` (atlas 4b1f8f6, 3,653 rows, 3,017 genes).
 
+## Build
+
+Live (ClinGen serves only the current file, so the sha256 is whatever you got):
+
+```bash
+mkdir -p local/clingen
+curl -L -o local/clingen/clingen.csv https://search.clinicalgenome.org/kb/gene-validity/download
+```
+
+```python
+from datetime import date
+from pathlib import Path
+from sources.clingen import recipe
+
+recipe.build(
+    Path("local/clingen/clingen.csv"),
+    retrieved_on=date.today(),
+    revision=1,
+    built_by={"host": "<machine>"},
+    out=Path("dist/clingen"),
+)
+```
+
+Bootstrap, from the atlas mirror at the pinned commit (`recipe.ATLAS_COMMIT`,
+`4b1f8f68cbc30beaf932fbbc58e3617ebe401b6d`; any other `atlas_commit` is refused, because
+the manifest's input URL is a permanent permalink to it):
+
+```bash
+mkdir -p local/clingen
+git -C <atlas> show 4b1f8f6:mirrors/clingen_gene_validity.tsv > local/clingen/clingen_gene_validity.tsv
+```
+
+```python
+recipe.bootstrap(
+    Path("local/clingen/clingen_gene_validity.tsv"),
+    atlas_commit=recipe.ATLAS_COMMIT,
+    revision=1,
+    built_by={"host": "<machine>"},
+    out=Path("dist/clingen"),
+)
+```
+
 ## Measurements
 
 - Live parity, 2026-11-12: `read_rows` over the 2026-11-11 download (3,730 rows)

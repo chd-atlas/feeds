@@ -17,6 +17,49 @@ Two entry points in `recipe.py`:
   cannot be fetched again. It accepts only the file with sha256 `88c77272...` (atlas
   4b1f8f6, 30,410 rows, 6,113 genes); the package version is `88c77272`.
 
+## Build
+
+Live (`?format=new` is mandatory; the quota is 20 requests per IP per day; GenCC states
+no release, so the sha256 is whatever you got):
+
+```bash
+mkdir -p local/gencc
+curl -L -o local/gencc/gencc-submissions.tsv "https://search.thegencc.org/download/action/submissions-export-tsv?format=new"
+```
+
+```python
+from datetime import date
+from pathlib import Path
+from sources.gencc import recipe
+
+recipe.build(
+    Path("local/gencc/gencc-submissions.tsv"),
+    retrieved_on=date.today(),
+    revision=1,
+    built_by={"host": "<machine>"},
+    out=Path("dist/gencc"),
+)
+```
+
+Bootstrap, from the atlas mirror at the pinned commit (`recipe.ATLAS_COMMIT`,
+`4b1f8f68cbc30beaf932fbbc58e3617ebe401b6d`; any other `atlas_commit` is refused, because
+the manifest's input URL is a permanent permalink to it):
+
+```bash
+mkdir -p local/gencc
+git -C <atlas> show 4b1f8f6:mirrors/gencc_submissions.tsv > local/gencc/gencc_submissions.tsv
+```
+
+```python
+recipe.bootstrap(
+    Path("local/gencc/gencc_submissions.tsv"),
+    atlas_commit=recipe.ATLAS_COMMIT,
+    revision=1,
+    built_by={"host": "<machine>"},
+    out=Path("dist/gencc"),
+)
+```
+
 ## Measurements
 
 - Live parity, 2026-11-12: `read_rows` over the 2026-11-11 export gives 30,376
