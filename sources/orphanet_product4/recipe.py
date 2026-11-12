@@ -20,10 +20,13 @@ mapped to a number.
 
 EXACT DUPLICATES
 ----------------
-Product 4 annotates some (orpha, hpo) pairs twice. Where every column repeats the row
-is an exact duplicate and is collapsed into one ``dropped`` entry (count, up to five
+Product 4 annotates some (orpha, hpo) pairs twice. Where every table column repeats the
+row is collapsed into one ``dropped`` entry (count, up to five
 ``ORPHA:<code> HP:<id>`` examples); where only the band differs both rows are kept,
-which is why the band is in the table key ``(orpha, hpo, frequency)``. Measured by
+which is why the band is in the table key ``(orpha, hpo, frequency)``. "Identical" means
+in the carried columns only: for 1 of the 24 (ORPHA:2806 / HP:0010856, association ids
+648555 and 648556) the file's ``DiagnosticCriteria``, which the table does not carry,
+differs. Measured by
 this recipe on the pinned file (see the README): 116,664 annotations, 116,640 rows, 24
 collapsed. ``input_counts.rows`` is the annotations read (plan Decision 4).
 
@@ -104,7 +107,7 @@ def _read(xml: Path) -> tuple[list[tuple[str, ...]], list[dict[str, Any]], int]:
         pairs = sorted({f"{row[0]} {row[2]}" for row, n in counts.items() if n > 1})
         dropped.append(
             {
-                "reason": f"exact duplicate annotation in {xml.name}",
+                "reason": f"annotation identical to another in every table column in {xml.name}",
                 "count": collapsed,
                 "examples": pairs[:_EXAMPLES],
             }

@@ -16,7 +16,7 @@ RECIPE_COMMIT = "a" * 40
 
 _HEAD = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
-    '<JDBOR date="2026-06-23 07:53:50" version="1.3.42 / 4.1.8 [2025-03-03]" copyright="x">\n'
+    '<JDBOR date="2030-01-02 03:04:05" version="9.9.9 / test [2030-01-01]" copyright="x">\n'
     '<DisorderList count="2">\n'
 )
 _TAIL = "</DisorderList>\n</JDBOR>\n"
@@ -126,15 +126,15 @@ def test_the_source_block_carries_the_files_own_header(
     assert manifest["source"] == {
         "name": manifest["source"]["name"],
         "version": f"sha256:{sha}",
-        "file_version": "1.3.42 / 4.1.8 [2025-03-03]",
-        "file_date": "2026-06-23 07:53:50",
+        "file_version": "9.9.9 / test [2030-01-01]",  # not the recipe constant: from the file
+        "file_date": "2030-01-02 03:04:05",
         "retrieved_on": "2026-10-25",
         "url": "https://www.orphadata.com/data/xml/en_product1.xml",
         "licence": "CC-BY-4.0",
         "redistribution": "permitted_with_attribution",
     }
     (entry,) = manifest["inputs"]
-    assert entry["sha256"] == sha and entry["upstream_release"] == "1.3.42 / 4.1.8 [2025-03-03]"
+    assert entry["sha256"] == sha and entry["upstream_release"] == "9.9.9 / test [2030-01-01]"
     assert manifest["input_counts"] == {"rows": 1} and manifest["dropped"] == []
     assert table == [
         "orpha\tomim\trelation\tvalidation\tsource",

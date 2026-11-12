@@ -20,7 +20,7 @@ RECIPE_COMMIT = "a" * 40
 
 _HEAD = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
-    '<JDBOR date="2026-06-23 07:57:18" version="1.3.42 / 4.1.8 [2025-03-03]" copyright="x">\n'
+    '<JDBOR date="2030-01-02 03:04:05" version="9.9.9 / test [2030-01-01]" copyright="x">\n'
     '<HPODisorderSetStatusList count="2">\n'
 )
 _TAIL = "</HPODisorderSetStatusList>\n</JDBOR>\n"
@@ -173,7 +173,9 @@ def test_exact_duplicate_annotations_collapse_into_one_dropped_entry(
     assert len(dropped) == 1
     assert dropped[0]["count"] == 3
     assert dropped[0]["examples"] == ["ORPHA:648 HP:0001642", "ORPHA:7 HP:0000001"]
-    assert "en_product4.xml" in dropped[0]["reason"]
+    assert dropped[0]["reason"] == (
+        "annotation identical to another in every table column in en_product4.xml"
+    )
 
     pinned(xml)  # type: ignore[operator]
     manifest, table = _read(_build(xml, tmp_path / "pkg"))
@@ -197,20 +199,22 @@ def test_the_source_block_carries_the_files_own_header(tmp_path: Path, pinned: o
     out = _build(xml, tmp_path / "pkg")
     manifest, table = _read(out)
     sha = hashlib.sha256(xml.read_bytes()).hexdigest()
-    assert jdbor_release(xml) == ("1.3.42 / 4.1.8 [2025-03-03]", "2026-06-23 07:57:18")
+    # The synthetic header differs from the recorded constants, so the manifest can only
+    # have taken it from the file.
+    assert jdbor_release(xml) == ("9.9.9 / test [2030-01-01]", "2030-01-02 03:04:05")
     assert manifest["version"] == sha[:8]
     assert manifest["ids"] == "hgnc_id" and manifest["coverage"] == "every_gene"
     src = manifest["source"]
     assert src["version"] == f"sha256:{sha}"  # type: ignore[index]
-    assert src["file_version"] == "1.3.42 / 4.1.8 [2025-03-03]"  # type: ignore[index]
-    assert src["file_date"] == "2026-06-23 07:57:18"  # type: ignore[index]
+    assert src["file_version"] == "9.9.9 / test [2030-01-01]"  # type: ignore[index]
+    assert src["file_date"] == "2030-01-02 03:04:05"  # type: ignore[index]
     assert src["retrieved_on"] == "2026-10-25"  # type: ignore[index]
     assert src["url"] == "https://www.orphadata.com/data/xml/en_product4.xml"  # type: ignore[index]
     assert src["licence"] == "CC-BY-4.0"  # type: ignore[index]
     assert src["redistribution"] == "permitted_with_attribution"  # type: ignore[index]
     (entry,) = manifest["inputs"]  # type: ignore[misc]
     assert entry["sha256"] == sha and entry["retrieved_on"] == "2026-10-25"
-    assert entry["upstream_release"] == "1.3.42 / 4.1.8 [2025-03-03]"
+    assert entry["upstream_release"] == "9.9.9 / test [2030-01-01]"
     assert manifest["input_counts"] == {"rows": 3}
     assert table[0] == ["orpha", "disorder_name", "hpo", "hpo_label", "frequency", "source"]
 
