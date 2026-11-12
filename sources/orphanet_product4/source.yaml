@@ -1,0 +1,18 @@
+name: >-
+  Orphadata Science, product 4 ("Phenotypes associated with rare
+  disorders", en_product4.xml): HPO phenotype annotations with frequency
+  bands, cardiovascular branch (HP:0001626) only
+url: https://www.orphadata.com/data/xml/en_product4.xml
+licence: CC-BY-4.0
+redistribution: permitted_with_attribution
+# Quoted from the licence comment of the atlas's mirrors/sources.yaml
+# `orphanet_product4` entry (atlas 4b1f8f6); product 1's entry says "Same licence
+# block and terms as product 4", so both recipes quote this text.
+licence_evidence: >-
+  The file declares `<ShortIdentifier>CC-BY-4.0</ShortIdentifier>` in its
+  own `<Licence>` block, and https://www.orphadata.com/legal-notice/ says
+  Orphadata Science files are CC BY 4.0. Required citation: "Orphadata
+  Science: Free access data from Orphanet. (c) INSERM 1999. Available on
+  http://sciences.orphadata.com/. Data version [date]". Its AI-use clause
+  covers LLM/AI tools offered to third parties, which this static data
+  site is not.
