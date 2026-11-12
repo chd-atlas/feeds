@@ -96,6 +96,15 @@ SHEETS: Final[dict[str, tuple[str, str, str]]] = {
     "nsCHD_vs_controls": ("nonsyndromic", "n_het_nonsyndromic", "n_total_nonsyndromic"),
 }
 
+# The value each sheet's own `analysis` column holds on every row (measured
+# constant per sheet on the pinned workbook). Checked, so a sheet read under the
+# wrong name cannot pair another comparison's statistics with this stratum's counts.
+_ANALYSIS: Final[dict[str, str]] = {
+    "aCHD_vs_controls": "all_cases",
+    "sCHD_vs_controls": "syndromic",
+    "nsCHD_vs_controls": "nonsyndromic",
+}
+
 # The paper's `csq_group` vocabulary, mapped onto the atlas's `ConsequenceClass`.
 # `syn` is carried through rather than filtered: synonymous variants should show
 # no enrichment, so the row is the study's own negative control and belongs
@@ -112,6 +121,7 @@ _EXAMPLES: Final = 5
 # Every column the row builder reads, checked against each sheet's header.
 _COLUMNS: Final = (
     "SYMBOL",
+    "analysis",
     "csq_group",
     "maf",
     "n_het_controls",
@@ -180,6 +190,13 @@ def read_records(workbook: Path, sheet: str) -> list[dict[str, str]]:
     missing = [c for c in (*_COLUMNS, carriers, denominator) if c not in present]
     if missing:
         raise PackageRefused(f"sheet {sheet!r} has no column {', '.join(missing)}")
+    expected = _ANALYSIS[sheet]
+    for number, record in enumerate(records, start=2):
+        if record["analysis"] != expected:
+            raise PackageRefused(
+                f"sheet {sheet!r} row {number}: analysis is {record['analysis']!r}, "
+                f"not {expected!r}; the sheet does not hold the comparison its name says"
+            )
     return records
 
 

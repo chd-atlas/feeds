@@ -29,6 +29,7 @@ SHEETS = ("aCHD_vs_controls", "sCHD_vs_controls", "nsCHD_vs_controls")
 def _record(symbol: str, csq: str = "hcLOF", **over: str) -> dict[str, str]:
     base = {
         "SYMBOL": symbol,
+        "analysis": "all_cases",
         "csq_group": csq,
         "maf": "1E-3",
         "n_het_cases": "30",
@@ -52,9 +53,26 @@ def _table(records: list[dict[str, str]]) -> list[list[str]]:
     return [header, *[[r.get(c, "") for c in header] for r in records]]
 
 
+ANALYSIS = {
+    "aCHD_vs_controls": "all_cases",
+    "sCHD_vs_controls": "syndromic",
+    "nsCHD_vs_controls": "nonsyndromic",
+}
+# Each sheet's own statistics, so a build that reads one sheet under another's
+# name publishes a different p-value and odds ratio.
+STATS = {
+    "aCHD_vs_controls": {"fet.p_value": "0.01", "fet.odds_ratio": "2.5"},
+    "sCHD_vs_controls": {"fet.p_value": "0.002", "fet.odds_ratio": "3.5"},
+    "nsCHD_vs_controls": {"fet.p_value": "0.3", "fet.odds_ratio": "1.25"},
+}
+
+
 def _workbook(path: Path, records: list[dict[str, str]]) -> Path:
     sheets = {"Info": [["Supplementary Data 3"]]}
-    sheets |= {name: _table(records) for name in SHEETS}
+    sheets |= {
+        name: _table([r | {"analysis": ANALYSIS[name]} | STATS[name] for r in records])
+        for name in SHEETS
+    }
     return write_workbook_sheets(path, sheets)
 
 
@@ -115,6 +133,28 @@ def test_each_sheet_is_its_stratum_and_carries_its_own_carrier_columns() -> None
     assert (row["maf_max"], row["effect"], row["pvalue"]) == ("0.001", "6.11", "0.00012")
     assert (row["ci_low"], row["ci_high"], row["pvalue_test"]) == ("2.5", "9.75", "fisher_exact")
     assert tuple(row) == recipe.ORDER
+
+
+def test_each_stratum_carries_its_own_sheets_statistics(tmp_path: Path, pinned: Any) -> None:
+    """The sheet read for a stratum is the sheet it is named for (I1 of the final review)."""
+    out = _build(pinned(tmp_path / "w.xlsx", [_record("TBX5")]), tmp_path)
+    got = {r["cohort_stratum"]: (r["pvalue"], r["effect"]) for r in _read(out, "burden")}
+    assert got == {
+        "all": ("0.01", "2.5"),
+        "syndromic": ("0.002", "3.5"),
+        "nonsyndromic": ("0.3", "1.25"),
+    }
+
+
+def test_a_sheet_whose_analysis_column_names_another_comparison_is_refused(tmp_path: Path) -> None:
+    sheets = {name: _table([_record("TBX5") | {"analysis": ANALYSIS[name]}]) for name in SHEETS}
+    sheets["sCHD_vs_controls"] = _table(
+        [_record("TBX5", analysis="syndromic"), _record("ZIC3", analysis="all_cases")]
+    )
+    path = write_workbook_sheets(tmp_path / "w.xlsx", sheets)
+    assert len(recipe.read_records(path, "aCHD_vs_controls")) == 1
+    with pytest.raises(PackageRefused, match="sCHD_vs_controls.*row 3.*'all_cases'.*'syndromic'"):
+        recipe.read_records(path, "sCHD_vs_controls")
 
 
 def test_an_infinite_odds_ratio_is_unbounded_with_no_number() -> None:
