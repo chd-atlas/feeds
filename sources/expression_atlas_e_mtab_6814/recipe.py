@@ -147,7 +147,11 @@ def parse_assay_groups(config_xml: Path) -> dict[str, AssayGroup]:
         group_id = element.get("id")
         label = element.get("label")
         if not group_id or not label:
-            continue
+            raise PackageRefused(
+                f"an assay_group has id {group_id!r} and label {label!r}; both are required"
+            )
+        if group_id in groups:
+            raise PackageRefused(f"assay group {group_id} is defined twice")
         if ";" not in label:
             raise PackageRefused(
                 f"assay group {group_id}: label {label!r} has no '; ' split between stage and organ"
@@ -156,6 +160,16 @@ def parse_assay_groups(config_xml: Path) -> dict[str, AssayGroup]:
         n_samples = sum(1 for _ in element.iter("assay"))
         groups[group_id] = AssayGroup(group_id, stage, tissue, n_samples)
     return groups
+
+
+def is_absent(cell: str) -> bool:
+    """A blank, ``NA`` or ``NaN`` cell: the gene was not quantified in the group.
+
+    Distinct from a malformed cell, which ``parse_cell`` also maps to None but the
+    build refuses (measured 2026-11-12: 0 of the pinned matrix's cells are malformed).
+    """
+    cell = cell.strip()
+    return not cell or cell.upper() in {"NA", "NAN"}
 
 
 def parse_cell(cell: str) -> tuple[float, float, float] | None:
@@ -292,7 +306,24 @@ def build(
         reader = csv.reader(handle, delimiter="\t")
         header = next(reader)
         columns = {index: header[index] for index in range(2, len(header))}
+        unknown = sorted(g for g in columns.values() if g not in groups)
+        if unknown:
+            raise PackageRefused(
+                f"{matrix.name}: columns {unknown[:5]} are not assay groups of the configuration"
+            )
+        if len(set(columns.values())) != len(columns):
+            raise PackageRefused(f"{matrix.name}: a column id is repeated in the header")
+        unfilled = sorted(set(groups) - set(columns.values()))
+        if unfilled:
+            raise PackageRefused(
+                f"configured groups {unfilled[:5]} have no column in {matrix.name}"
+            )
         for record in reader:
+            if len(record) != len(header):
+                raise PackageRefused(
+                    f"{matrix.name}: line {reader.line_num} has {len(record)} fields, "
+                    f"expected {len(header)}"
+                )
             gene = record[0].strip()
             if not gene:
                 raise PackageRefused(f"{matrix.name}: a row has a blank gene id")
@@ -300,12 +331,15 @@ def build(
                 raise PackageRefused(f"{matrix.name}: gene {gene} appears on two rows")
             seen.add(gene)
             for index, group_id in columns.items():
-                group = groups.get(group_id)
-                if group is None or index >= len(record):
+                group = groups[group_id]
+                if is_absent(record[index]):
                     continue
                 parsed = parse_cell(record[index])
                 if parsed is None:
-                    continue
+                    raise PackageRefused(
+                        f"{matrix.name}: gene {gene}, column {group_id}: cell "
+                        f"{record[index]!r} is neither absent nor a quintuple"
+                    )
                 q25, median, q75 = parsed
                 collected[group_id].append(median)
                 row = profile_row(DATASET, gene, group, q25, median, q75)
@@ -314,9 +348,12 @@ def build(
     quantiles: list[list[str | None]] = []
     for group_id, group in groups.items():
         medians = collected[group_id]
-        if medians:
-            for row in quantile_rows(DATASET, group, medians):
-                quantiles.append([_cell(row[c]) for c in QUANTILE_COLUMNS])
+        if not medians:
+            raise PackageRefused(
+                f"assay group {group_id} quantified no gene; it would have no grid"
+            )
+        for row in quantile_rows(DATASET, group, medians):
+            quantiles.append([_cell(row[c]) for c in QUANTILE_COLUMNS])
 
     # The schemas' sort keys; the percentile is numeric, everything else text.
     profiles.sort(key=lambda r: (r[0], r[1], r[2], r[3]))

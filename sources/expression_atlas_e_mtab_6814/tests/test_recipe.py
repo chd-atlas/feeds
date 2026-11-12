@@ -57,8 +57,10 @@ def test_an_unquantified_cell_is_none_and_never_zero(cell: str) -> None:
     """ "Not measured" and "measured as zero" are different facts.
 
     Returning 0.0 would put a fabricated floor-level value into the quantile grid
-    and give the gene a ``median_abundance`` the source never reported. A malformed
-    cell (``1,2,3``: neither one value nor five) is refused for the same reason.
+    and give the gene a ``median_abundance`` the source never reported. ``parse_cell`` also
+    returns None for a malformed cell (``1,2,3``: neither one value nor five); ``build``
+    tells the two apart with ``is_absent`` and refuses the malformed one
+    (``test_a_malformed_cell_refuses``).
     """
     assert parse_cell(cell) is None
 
@@ -294,3 +296,48 @@ def test_a_breakpoint_is_rounded_to_six_places() -> None:
     group = AssayGroup("g1", "7 week post conception", "heart", 3)
     rows = list(quantile_rows("E-MTAB-6814", group, [0.0, 1 / 3]))
     assert rows[50]["value"] == 0.166667
+
+
+GROUPS_G1_AGAIN = '<assay_group id="g1" label="1 week post conception; heart"></assay_group>'
+
+
+def _refused(tmp_path: Path, pinned: Any, config: str, matrix: str, match: str) -> None:
+    tpms, xml = pinned(tmp_path, config, matrix)
+    with pytest.raises(PackageRefused, match=match):
+        _build(tpms, xml, tmp_path)
+    assert not (tmp_path / "pkg").exists()
+
+
+def test_a_malformed_cell_refuses(tmp_path: Path, pinned: Any) -> None:
+    rows = [("ENSG00000000009", ["1,2,3", "NA", "10"])]
+    _refused(tmp_path, pinned, _config(GROUPS), _matrix(rows), "ENSG00000000009.*g1.*1,2,3")
+
+
+def test_an_unknown_matrix_column_refuses(tmp_path: Path, pinned: Any) -> None:
+    matrix = _matrix(ROWS).replace("g3", "g9")
+    _refused(tmp_path, pinned, _config(GROUPS), matrix, "g9")
+
+
+def test_a_short_row_refuses(tmp_path: Path, pinned: Any) -> None:
+    matrix = _matrix(ROWS) + "ENSG00000000077\tSYM\t1\n"
+    _refused(tmp_path, pinned, _config(GROUPS), matrix, "line 5 has 3 fields")
+
+
+def test_a_configured_group_with_no_column_refuses(tmp_path: Path, pinned: Any) -> None:
+    groups = GROUPS | {"g4": ("11 week post conception; heart", 2)}
+    _refused(tmp_path, pinned, _config(groups), _matrix(ROWS), "g4")
+
+
+def test_a_group_no_gene_fills_refuses(tmp_path: Path, pinned: Any) -> None:
+    rows = [(gene, [*cells[:2], ""]) for gene, cells in ROWS]
+    _refused(tmp_path, pinned, _config(GROUPS), _matrix(rows), "g3 quantified no gene")
+
+
+def test_a_group_without_a_label_refuses(tmp_path: Path, pinned: Any) -> None:
+    config = _config(GROUPS).replace('label="9 week post conception; heart"', 'label=""')
+    _refused(tmp_path, pinned, config, _matrix(ROWS), "both are required")
+
+
+def test_a_duplicated_group_id_refuses(tmp_path: Path, pinned: Any) -> None:
+    config = _config(GROUPS).replace("</assay_groups>", GROUPS_G1_AGAIN + "</assay_groups>")
+    _refused(tmp_path, pinned, config, _matrix(ROWS), "g1 is defined twice")
