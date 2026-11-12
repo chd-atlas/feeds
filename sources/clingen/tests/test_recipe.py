@@ -37,7 +37,7 @@ COLUMNS = [
 
 BANNER = (
     '"CLINGEN GENE DISEASE VALIDITY CURATIONS","","","","","","","","",""\n'
-    '"FILE CREATED: 2026-08-03","","","","","","","","",""\n'
+    '"FILE CREATED: 2026-11-11","","","","","","","","",""\n'
     '"WEBPAGE: https://search.clinicalgenome.org/kb/gene-validity","","","","","","","","",""\n'
     '"+++++++++++","++++++++++++++","+++++++++++++","++++++++++++++++++","+++++++++",'
     '"+++++++++","++++++++++++++","+++++++++++++","+++++++++++++++++++","+++++++++++++++++++"\n'
@@ -54,6 +54,8 @@ ROWS = (
     '"https://example.org/a","2025-03-25T16:00:00.000Z","Syndromic Disorders GCEP"\n'
     '"GATA4","HGNC:4173","congenital heart disease","MONDO:0005453","AD","SOP9","Limited",'
     '"https://example.org/b","2020-01-01T16:00:00.000Z","Congenital Heart Disease GCEP"\n'
+    '"GATA4","HGNC:4173","atrial septal defect","MONDO:0000001","AR","SOP9","Disputed",'
+    '"https://example.org/d","2022-01-01T16:00:00.000Z","Congenital Heart Disease GCEP"\n'
     '"GATA4","HGNC:4173","atrial septal defect","MONDO:0000001","AD","SOP9","Moderate",'
     '"https://example.org/c","2021-01-01T16:00:00.000Z","Congenital Heart Disease GCEP"\n'
 )
@@ -73,8 +75,8 @@ def _read_package(root: Path) -> tuple[dict[str, object], list[list[str]]]:
 
 def test_the_banner_is_the_version_and_separator_rows_are_not_data(tmp_path: Path) -> None:
     banner, rows = recipe.read_rows(_csv(tmp_path))
-    assert banner == "FILE CREATED: 2026-08-03"
-    assert len(rows) == 3, "three data rows, no separator rows"
+    assert banner == "FILE CREATED: 2026-11-11"
+    assert len(rows) == 4, "four data rows, no separator rows"
     assert not any("+++" in cell for row in rows for cell in row)
 
     out = recipe.build(
@@ -86,19 +88,20 @@ def test_the_banner_is_the_version_and_separator_rows_are_not_data(tmp_path: Pat
         commit_of=lambda: RECIPE_COMMIT,
     )
     manifest, table = _read_package(out)
-    assert manifest["version"] == "2026-08-03"
+    # Not the bootstrap constant's date, so a build that took MIRROR_BANNER would differ.
+    assert manifest["version"] == "2026-11-11"
     assert manifest["ids"] == "hgnc_id"
     assert manifest["coverage"] == "every_gene"
-    assert manifest["source"]["version"] == "FILE CREATED: 2026-08-03"  # type: ignore[index]
+    assert manifest["source"]["version"] == "FILE CREATED: 2026-11-11"  # type: ignore[index]
     assert manifest["source"]["retrieved_on"] == "2026-08-04"  # type: ignore[index]
     assert manifest["built_by"] == {**BUILT_BY, "recipe_commit": RECIPE_COMMIT}
-    assert manifest["input_counts"] == {"rows": 3, "genes": 2}
+    assert manifest["input_counts"] == {"rows": 4, "genes": 2}
     (entry,) = manifest["inputs"]  # type: ignore[misc]
-    assert entry["upstream_release"] == "FILE CREATED: 2026-08-03"
+    assert entry["upstream_release"] == "FILE CREATED: 2026-11-11"
     assert entry["retrieved_on"] == "2026-08-04"
     assert entry["sha256"] == hashlib.sha256(_csv(tmp_path).read_bytes()).hexdigest()
     assert table[0] == COLUMNS
-    assert len(table) == 4
+    assert len(table) == 5
 
 
 def test_rows_are_written_in_table_order_and_sorted_by_the_key(tmp_path: Path) -> None:
@@ -106,6 +109,7 @@ def test_rows_are_written_in_table_order_and_sorted_by_the_key(tmp_path: Path) -
     assert [(r[0], r[2], r[4]) for r in rows] == [
         ("HGNC:11604", "MONDO:0007732", "AD"),
         ("HGNC:4173", "MONDO:0000001", "AD"),
+        ("HGNC:4173", "MONDO:0000001", "AR"),  # input order is AR first: moi decides
         ("HGNC:4173", "MONDO:0005453", "AD"),
     ]
     # Table column order, not the CSV's: ONLINE REPORT is last, GENE SYMBOL second.
@@ -141,7 +145,7 @@ def test_a_renamed_upstream_column_stops_the_build(tmp_path: Path) -> None:
 
 
 def test_a_banner_without_a_creation_date_is_refused(tmp_path: Path) -> None:
-    path = _csv(tmp_path, BANNER.replace("FILE CREATED: 2026-08-03", "CREATED SOMETIME") + ROWS)
+    path = _csv(tmp_path, BANNER.replace("FILE CREATED: 2026-11-11", "CREATED SOMETIME") + ROWS)
     with pytest.raises(PackageRefused, match="FILE CREATED"):
         recipe.read_rows(path)
 
@@ -183,8 +187,8 @@ def test_the_bootstrap_refuses_any_other_bytes_and_states_its_origin(
         "retrieved_on": "2026-08-03",
         "upstream_release": "FILE CREATED: 2026-08-03",
     }
-    assert manifest["input_counts"] == {"rows": 3, "genes": 2}
-    assert table[0] == COLUMNS and len(table) == 4
+    assert manifest["input_counts"] == {"rows": 4, "genes": 2}
+    assert table[0] == COLUMNS and len(table) == 5
 
     # A mirror whose header is not the table's column order is refused.
     bad = tmp_path / "bad.tsv"
