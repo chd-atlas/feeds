@@ -20,7 +20,7 @@ from sources.clingen import recipe
 
 BUILT_BY = {"host": "login01"}
 RECIPE_COMMIT = "a" * 40
-ATLAS_COMMIT = "b" * 40
+ATLAS_COMMIT = "4b1f8f68cbc30beaf932fbbc58e3617ebe401b6d"
 
 COLUMNS = [
     "gene",
@@ -170,8 +170,11 @@ def test_the_bootstrap_refuses_any_other_bytes_and_states_its_origin(
     assert not (tmp_path / "a").exists()
 
     monkeypatch.setattr(recipe, "MIRROR_SHA256", hashlib.sha256(mirror.read_bytes()).hexdigest())
-    with pytest.raises(PackageRefused, match="40"):
+    with pytest.raises(PackageRefused, match="pinned"):
         recipe.bootstrap(mirror, atlas_commit="4b1f8f6", out=tmp_path / "b", **kwargs)  # type: ignore[arg-type]
+    # A well-formed 40-hex commit that is not the pinned one is refused too.
+    with pytest.raises(PackageRefused, match="pinned"):
+        recipe.bootstrap(mirror, atlas_commit="b" * 40, out=tmp_path / "b2", **kwargs)  # type: ignore[arg-type]
 
     out = recipe.bootstrap(mirror, atlas_commit=ATLAS_COMMIT, out=tmp_path / "c", **kwargs)  # type: ignore[arg-type]
     manifest, table = _read_package(out)

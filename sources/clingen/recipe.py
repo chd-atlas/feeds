@@ -30,9 +30,9 @@ passed off as a download; the manifest's input URL is the raw permalink at the a
 commit, and its ``upstream_release`` is the banner text of the file the mirror was
 made from.
 
-Known and unmeasured here: the live download of 2026-11-11 has a repeated
-(gene, disease, moi) key (FOXE3), which the table's primary key refuses, so
-``build`` on that file stops in ``write_package``; ``read_rows`` is pure so row
+Measured 2026-11-11, by running ``build`` on that day's download: it stops in
+``write_package`` with exactly one primary-key error, a repeated (gene, disease, moi)
+key for FOXE3 ('HGNC:3808', 'MONDO:0019625', 'AD'). ``read_rows`` is pure, so row
 parity with the atlas converter can be measured without packaging.
 """
 
@@ -81,8 +81,9 @@ MIRROR_NAME: Final = "clingen_gene_validity.tsv"
 MIRROR_SHA256: Final = "b4c89cb6b0bbb5016894661ef9add7b432b91240118e5b89e55fd3dc7e6ec1d1"
 MIRROR_BANNER: Final = "FILE CREATED: 2026-08-03"
 MIRROR_RETRIEVED_ON: Final = date(2026, 8, 3)
+# The atlas commit whose mirror this is; the manifest URL is a permanent permalink to it.
+ATLAS_COMMIT: Final = "4b1f8f68cbc30beaf932fbbc58e3617ebe401b6d"
 _ATLAS_RAW = "https://raw.githubusercontent.com/chd-atlas/chd-atlas.github.io"
-_COMMIT = re.compile(r"[0-9a-f]{40}")
 
 
 def read_rows(csv_path: Path) -> tuple[str, list[tuple[str, ...]]]:
@@ -209,12 +210,15 @@ def bootstrap(
 ) -> Path:
     """Package the atlas's committed mirror at ``atlas_commit`` (decision F21), once.
 
-    Refuses any file whose sha256 is not ``MIRROR_SHA256`` and any header that is
-    not the table's column order.
+    Refuses any ``atlas_commit`` but ``ATLAS_COMMIT``, any file whose sha256 is not
+    ``MIRROR_SHA256`` and any header that is not the table's column order.
     """
     built_by, _ = stamp(built_by, commit_of)
-    if not _COMMIT.fullmatch(atlas_commit):
-        raise PackageRefused(f"atlas_commit {atlas_commit!r} is not a full 40-hex commit")
+    if atlas_commit != ATLAS_COMMIT:
+        raise PackageRefused(
+            f"atlas_commit {atlas_commit!r} is not the pinned {ATLAS_COMMIT}; the mirror's "
+            "permalink must name the commit it was read at"
+        )
     data = mirror.read_bytes()
     sha256 = hashlib.sha256(data).hexdigest()
     if sha256 != MIRROR_SHA256:

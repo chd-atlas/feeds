@@ -103,8 +103,9 @@ _EXAMPLES: Final = 5
 MIRROR_NAME: Final = "gencc_submissions.tsv"
 MIRROR_SHA256: Final = "88c77272f0fd7bf807387ca7b5ae549d15183bd57e45a97f26cafc4d4e5c7808"
 MIRROR_RETRIEVED_ON: Final = date(2026, 8, 3)
+# The atlas commit whose mirror this is; the manifest URL is a permanent permalink to it.
+ATLAS_COMMIT: Final = "4b1f8f68cbc30beaf932fbbc58e3617ebe401b6d"
 _ATLAS_RAW = "https://raw.githubusercontent.com/chd-atlas/chd-atlas.github.io"
-_COMMIT = re.compile(r"[0-9a-f]{40}")
 
 
 def _check_cells(rows: Sequence[Sequence[str]], origin: str) -> None:
@@ -249,12 +250,15 @@ def bootstrap(
 ) -> Path:
     """Package the atlas's committed mirror at ``atlas_commit`` (decision F21), once.
 
-    Refuses any file whose sha256 is not ``MIRROR_SHA256`` and any header that is
-    not the table's column order.
+    Refuses any ``atlas_commit`` but ``ATLAS_COMMIT``, any file whose sha256 is not
+    ``MIRROR_SHA256`` and any header that is not the table's column order.
     """
     built_by, _ = stamp(built_by, commit_of)
-    if not _COMMIT.fullmatch(atlas_commit):
-        raise PackageRefused(f"atlas_commit {atlas_commit!r} is not a full 40-hex commit")
+    if atlas_commit != ATLAS_COMMIT:
+        raise PackageRefused(
+            f"atlas_commit {atlas_commit!r} is not the pinned {ATLAS_COMMIT}; the mirror's "
+            "permalink must name the commit it was read at"
+        )
     data = mirror.read_bytes()
     sha256 = hashlib.sha256(data).hexdigest()
     if sha256 != MIRROR_SHA256:
