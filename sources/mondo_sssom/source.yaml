@@ -1,0 +1,10 @@
+name: >-
+  Mondo Disease Ontology mappings (mondo.sssom.tsv), release v2026-10-06:
+  skos:exactMatch to Orphanet and OMIM, for terms the validity mirrors name
+url: https://raw.githubusercontent.com/monarch-initiative/mondo/v2026-10-06/src/ontology/mappings/mondo.sssom.tsv
+licence: CC-BY-4.0
+redistribution: permitted_with_attribution
+# Quoted as the atlas's mirrors/sources.yaml records it (atlas 4b1f8f6).
+licence_evidence: >-
+  The repository's LICENSE is CC BY 4.0 (GitHub's licence API reports SPDX
+  CC-BY-4.0 for monarch-initiative/mondo).
