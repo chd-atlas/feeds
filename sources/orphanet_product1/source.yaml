@@ -1,0 +1,17 @@
+name: >-
+  Orphadata Science, product 1 ("Rare diseases and alignment with
+  terminologies", en_product1.xml): Orphanet-to-OMIM references with
+  their mapping relation and validation status
+url: https://www.orphadata.com/data/xml/en_product1.xml
+licence: CC-BY-4.0
+redistribution: permitted_with_attribution
+# The atlas's `orphanet_product1` entry says "Same licence block and terms as
+# product 4"; the text below is product 4's (atlas 4b1f8f6).
+licence_evidence: >-
+  The file declares `<ShortIdentifier>CC-BY-4.0</ShortIdentifier>` in its
+  own `<Licence>` block, and https://www.orphadata.com/legal-notice/ says
+  Orphadata Science files are CC BY 4.0. Required citation: "Orphadata
+  Science: Free access data from Orphanet. (c) INSERM 1999. Available on
+  http://sciences.orphadata.com/. Data version [date]". Its AI-use clause
+  covers LLM/AI tools offered to third parties, which this static data
+  site is not.

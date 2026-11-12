@@ -1,0 +1,12 @@
+name: Gene Curation Coalition (GenCC) submissions export
+url: https://search.thegencc.org/download
+licence: CC0-1.0
+redistribution: permitted
+# Quoted from the licence comment of the atlas's mirrors/sources.yaml `gencc`
+# entry (atlas 4b1f8f6):
+licence_evidence: >-
+  "The GenCC data are available free of restriction under a CC0 1.0 Universal
+  (CC0 1.0) Public Domain Dedication." GenCC additionally "requests that you give
+  attribution to GenCC and the contributing sources whenever possible and
+  appropriate" -- a request, not a licence condition: CC0 waives all rights.
+  -- https://thegencc.org/terms
