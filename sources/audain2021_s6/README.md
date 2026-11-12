@@ -58,7 +58,8 @@ Moved from the atlas's `scripts/convert_audain2021.py`, whose docstring (kept in
 ## Measurements
 
 Measured 2026-11-12 by `recipe.build` on the pinned workbooks, revision 1 (run
-from a clean checkout at the commit that added the recipe; the package was
+from a clean checkout at 24af682, where the final review reproduced it
+exactly; the package was
 built into a scratch directory, not `dist/`):
 
 - `input_counts`: 11,515 S6 rows read, 11,515 distinct symbols; `dropped`: none.
