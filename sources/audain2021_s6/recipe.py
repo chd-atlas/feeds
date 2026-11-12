@@ -1,6 +1,6 @@
 """Audain 2021 CNV-deletion burden (S6 Table + S8's CHD-only carriers) as ``audain2021_s6``.
 
-Moved from the atlas's ``scripts/convert_audain2021.py`` (at 934d3ac); the
+Moved from the atlas's ``scripts/convert_audain2021.py`` (at 4b1f8f6); the
 measurements in the sections below are that docstring's, taken by its author on
 the dates they name against the real workbooks, and were not re-taken here (the
 real build's counts are in the README). The package carries **every** symbol of

@@ -1,11 +1,11 @@
 """The Audain 2021 recipe on synthetic S6 and S8 workbooks: no network, no mirror.
 
-Ported from the atlas's ``tests/unit/test_convert_audain2021.py`` (at 934d3ac),
-minus its two tests that read the committed mirror. The converter's tests drove
+Ported from the atlas's ``tests/unit/test_convert_audain2021.py`` (at 4b1f8f6),
+minus the one of its four tests that reads the committed mirror. The converter's tests drove
 ``convert`` with the sheet readers monkeypatched; these write real workbooks and
 call ``recipe.build``, so the reading path is exercised too. The recipe refuses
 any workbook whose sha256 is not the pinned one, so the build tests patch the
-two pins to the synthetic files' hashes; ``test_a_workbook_that_is_not_pinned_...``
+two pins to the synthetic files' hashes; ``test_a_workbook_that_is_not_the_pinned_one_is_refused``
 runs unpatched.
 
 No gene or number here is a fact about a real gene. Reading the real workbooks
