@@ -29,11 +29,35 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _coverage(coverage: Any) -> str:
+    if isinstance(coverage, str):
+        return coverage
+    return json.dumps(coverage, sort_keys=True, ensure_ascii=False)
+
+
 def release_notes(manifest: dict[str, Any], tag: str) -> str:
-    """The release page's text: what the package is and whose terms its data carry."""
+    """The release page's text: what the package holds, then whose terms its data carry.
+
+    The description comes from the package itself (its tables, coverage, ids and
+    inputs). ``source.name`` is the atlas's own name for the source and is labelled so:
+    it can describe what the atlas mirrors rather than what the package holds.
+    """
     source = manifest["source"]
+    tables = [
+        f"- {t['name']}: {t['rows']} rows"
+        + (f", {t['genes']} genes" if t.get("genes") is not None else "")
+        for t in sorted(manifest["tables"], key=lambda t: t["name"])
+    ]
+    inputs = [
+        f"- {i['name']} (sha256 {i['sha256'][:12]})"
+        for i in sorted(manifest["inputs"], key=lambda i: i["name"])
+    ]
     return (
-        f"Source package {tag}: {source['name']}.\n\n"
+        f"Source package {tag}.\n\n"
+        "Tables:\n" + "\n".join(tables) + "\n\n"
+        f"Coverage: {_coverage(manifest['coverage'])}. Identifiers: {manifest['ids']}.\n\n"
+        "Inputs:\n" + "\n".join(inputs) + "\n\n"
+        f"The atlas records this source as: {source['name']}.\n\n"
         f"Licence of the data: {source['licence']}. Redistribution: "
         f"{source['redistribution']}.\n"
         "These are the source's terms, not this repository's: the repository's Apache-2.0 "

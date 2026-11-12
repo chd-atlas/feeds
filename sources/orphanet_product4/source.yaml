@@ -1,3 +1,5 @@
+# `name` is the atlas's sources.yaml record of what the atlas mirrors, kept verbatim.
+# The package itself carries every annotation (spec F23: the atlas filters at ingest).
 name: >-
   Orphadata Science, product 4 ("Phenotypes associated with rare
   disorders", en_product4.xml): HPO phenotype annotations with frequency

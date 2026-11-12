@@ -189,9 +189,40 @@ def test_the_release_page_states_whose_terms_the_data_carry(dist: Path) -> None:
     publish(dist, dry_run=False, runner=live, root=ROOT)
     notes = live.calls[-1][live.calls[-1].index("--notes") + 1]
     assert notes == (
-        "Source package demo/2026-11-03: Demo.\n\n"
+        "Source package demo/2026-11-03.\n\n"
+        "Tables:\n"
+        "- burden: 2 rows, 2 genes\n\n"
+        "Coverage: every_gene. Identifiers: symbol.\n\n"
+        "Inputs:\n"
+        "- in.tsv (sha256 aaaaaaaaaaaa)\n\n"
+        "The atlas records this source as: Demo.\n\n"
         "Licence of the data: CC-BY-4.0. Redistribution: permitted_with_attribution.\n"
         "These are the source's terms, not this repository's: the repository's Apache-2.0 "
         "LICENSE covers the code only. The evidence for the terms is `licence_evidence` in "
         "`manifest.json`.\n"
+    )
+
+
+def test_release_notes_describe_the_package_not_the_atlas_name_and_stay_deterministic() -> None:
+    from feeds.release import release_notes
+
+    manifest = {
+        "coverage": {"registry_slice": "x"},
+        "ids": "hgnc_id",
+        "tables": [
+            {"name": "zeta", "rows": 5, "genes": None},
+            {"name": "alpha", "rows": 7, "genes": 3},
+        ],
+        "inputs": [
+            {"name": "b.tsv", "sha256": "f" * 64},
+            {"name": "a.tsv", "sha256": "0123456789abcdef" * 4},
+        ],
+        "source": {"name": "cardiac only", "licence": "L", "redistribution": "R"},
+    }
+    notes = release_notes(manifest, "p/1")
+    assert notes.startswith(
+        "Source package p/1.\n\nTables:\n- alpha: 7 rows, 3 genes\n- zeta: 5 rows\n\n"
+        'Coverage: {"registry_slice": "x"}. Identifiers: hgnc_id.\n\n'
+        "Inputs:\n- a.tsv (sha256 0123456789ab)\n- b.tsv (sha256 ffffffffffff)\n\n"
+        "The atlas records this source as: cardiac only.\n\n"
     )

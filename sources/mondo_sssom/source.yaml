@@ -1,3 +1,5 @@
+# `name` is the atlas's sources.yaml record of what the atlas mirrors, kept verbatim.
+# The package itself carries every term (spec F23: the atlas filters at ingest).
 name: >-
   Mondo Disease Ontology mappings (mondo.sssom.tsv), release v2026-10-06:
   skos:exactMatch to Orphanet and OMIM, for terms the validity mirrors name
