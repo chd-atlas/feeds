@@ -35,7 +35,7 @@ The two outputs, and why they are different populations
 -------------------------------------------------------
 * **profiles** -- since the recipe moved here, EVERY gene of the matrix (58,735
   Ensembl ids), under its Ensembl id (``ids: ensembl_gene_id``). The converter
-  carried only the atlas's registry (154 genes then) and joined on a registry
+  carried only the atlas's registry (185 genes, as of atlas 4b1f8f6) and joined on a registry
   column; the package has no registry, so ``chd-atlas ingest`` resolves the
   Ensembl ids against its own genes table and keeps its registry's genes.
 * **profile_quantiles** -- breakpoints over the matrix's **entire** gene
@@ -52,8 +52,8 @@ On the workstation, not the cluster (plan decision 10 of the phase 3 plan): the
 atlas's old ``scripts/hpc/cardoso_mirrors.sbatch`` was an 11-second standard
 library pass over a public download, and is not ported. The profiles table holds
 6,989,465 rows, which ``write_package`` keeps in memory and checks cell by cell
-in Python; that is fine on a machine with a few hundred GB of RAM (the build's
-measured time and peak memory are in the commit message).
+in Python; measured at 4.49 GB peak RSS on the workstation (the README has the build's
+measurements).
 """
 
 from __future__ import annotations
@@ -175,7 +175,9 @@ def is_absent(cell: str) -> bool:
 def parse_cell(cell: str) -> tuple[float, float, float] | None:
     """(q25, median, q75) from the Atlas's ``min,q25,median,q75,max`` quintuple.
 
-    Returns None for an absent measurement rather than zero: a gene the Atlas
+    Returns None for an absent measurement rather than zero (and for a
+    malformed cell too, which ``build`` tells apart with ``is_absent`` and
+    refuses): a gene the Atlas
     did not quantify in a group is not a gene measured at zero, and collapsing
     the two would publish a floor-level abundance the source never reported.
 

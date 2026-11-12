@@ -20,8 +20,7 @@ paper's RPKM; the docstring in `recipe.py` has the detail and the rules.
 On the workstation, not the cluster. The atlas's old `scripts/hpc/cardoso_mirrors.sbatch`
 was an 11-second standard-library pass over a public download; there is nothing
 for a cluster to do. It is not ported. `write_package` holds the 6,989,465
-profile rows in memory and checks each cell in Python, which a machine with a few
-hundred GB of RAM does comfortably.
+profile rows in memory and checks each cell in Python, measured at 4.49 GB peak RSS on the workstation (see Measurements).
 
 ## Build
 
@@ -41,3 +40,18 @@ recipe.build(
     out=Path("dist/expression_atlas_e_mtab_6814"),
 )
 ```
+
+## Measurements
+
+Measured 2026-11-12 by `recipe.build` on the pinned matrix and configuration,
+revision 1, on the workstation, into a scratch directory (not `dist/`); the final
+review's rebuild is the source of the time and memory:
+
+- `input_counts`: 58,735 genes (each with at least one measured cell); `dropped`:
+  none.
+- `profiles`: 6,989,465 rows; `profile_quantiles`: 12,019 rows.
+- Cost: about 3:00 wall (179.5 s) and 4.49 GB peak RSS (`resource.getrusage`
+  `ru_maxrss`).
+- Parity with the atlas's committed mirrors at atlas 4b1f8f6: the quantile shard
+  is byte-identical to `mirrors/profile_quantiles`'s, and all 22,015 committed
+  profile rows are present in the package.
