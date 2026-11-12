@@ -13,7 +13,6 @@ in ``build`` and in ``fetch``.
 
 import gzip
 import hashlib
-import html
 import json
 import zipfile
 from pathlib import Path
@@ -24,6 +23,7 @@ import pytest
 from feeds.package import PackageRefused
 from feeds.version import package_version
 from sources.sierant2025_ds6 import fetch, recipe
+from tests.xlsx_fixture import write_workbook
 
 BUILT_BY = {"host": "login01"}
 RECIPE_COMMIT = "a" * 40
@@ -98,51 +98,10 @@ REAL_BANDS = {
     65: "JL-FDR",
 }
 
-# The workbook's strict OOXML namespace, which a reader assuming the transitional
-# one reads as zero rows.
-_STRICT = "http://purl.oclc.org/ooxml/spreadsheetml/main"
-
-
-def _column_letters(index: int) -> str:
-    letters = ""
-    index += 1
-    while index:
-        index, remainder = divmod(index - 1, 26)
-        letters = chr(ord("A") + remainder) + letters
-    return letters
-
 
 def _workbook(path: Path, rows: list[list[str]]) -> Path:
-    """The smallest xlsx ``read_sheet_rows`` accepts: ``rows`` as inline strings on SHEET."""
-    data = "".join(
-        f'<row r="{number}">'
-        + "".join(
-            f'<c r="{_column_letters(index)}{number}" t="inlineStr">'
-            f"<is><t>{html.escape(value)}</t></is></c>"
-            for index, value in enumerate(row)
-            if value
-        )
-        + "</row>"
-        for number, row in enumerate(rows, start=1)
-    )
-    with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr(
-            "xl/workbook.xml",
-            f'<workbook xmlns="{_STRICT}" '
-            'xmlns:r="http://purl.oclc.org/ooxml/officeDocument/relationships">'
-            f'<sheets><sheet name="{html.escape(recipe.SHEET)}" sheetId="1" r:id="rId1"/></sheets>'
-            "</workbook>",
-        )
-        archive.writestr(
-            "xl/_rels/workbook.xml.rels",
-            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            '<Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>',
-        )
-        archive.writestr(
-            "xl/worksheets/sheet1.xml",
-            f'<worksheet xmlns="{_STRICT}"><sheetData>{data}</sheetData></worksheet>',
-        )
-    return path
+    """``rows`` as a strict-namespace workbook on SHEET (``tests/xlsx_fixture.py``)."""
+    return write_workbook(path, rows, recipe.SHEET)
 
 
 def _band_row() -> list[str]:
