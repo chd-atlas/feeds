@@ -88,12 +88,18 @@ that could not run is never reported as clean.
 - Mondo has no probe: it is pinned to a dated release URL, which cannot change.
 - `audain2021_s6` and `audain2026_sd3` have no probe: they are fixed supplement files.
 
-**What a baseline means.** `drift.json` says "nothing changed since `captured_on`" (all six
-were captured on 2026-11-13). It does not say the pinned package is current. ClinGen and
-GenCC are pinned to their 2026-08-03 bootstrap, so the packages predate their baselines:
-the first drift report for either says the source moved since the baseline, not since the
-package. To refresh the baselines after deciding what to rebuild, run
-`scripts/drift.py --capture` (it writes nothing unless every probe answered).
+**What a baseline means.** `drift.json` says "nothing changed since `captured_on`", the
+capturing machine's local date. It does not say the pinned package is current: a package
+may predate its baseline, and then the first drift report says the source moved since the
+baseline, not since the package. On 2026-11-14 HGNC's did: `hgnc/2026-10-06` is built from
+a dated archive, its baseline from the live file on 2026-11-13. ClinGen's and GenCC's
+baselines were re-captured at 2026-11-13T23:22:46Z (`captured_on` 2026-11-14, the
+workstation's date), 2.5 minutes after the download their packages (`clingen/2026-11-13`,
+`gencc/af6d7468`) were built from; ClinGen's banner carries the server's date, not the
+workstation's. To refresh a baseline after deciding what to rebuild, set the source's
+package in `SOURCES` (`scripts/drift.py`) to the one now pinned, run
+`scripts/drift.py --capture` (it writes nothing unless every probe answered, and it
+rewrites all six), then restore from git every baseline you did not mean to move.
 
 ## Making a release
 

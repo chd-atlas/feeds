@@ -1,11 +1,11 @@
 {
-  "captured_on": "2026-11-13",
+  "captured_on": "2026-11-14",
   "fingerprint": {
     "checksums": {
       "Clingen-Gene-Disease-Summary.csv": "1bf26b3670c0d7ff2700df59ee07d1aff8a70bc2c63a7ffc062377312cccf440"
     },
     "extras": {
-      "content_length": "1139215"
+      "content_length": "1139931"
     },
     "headers": {
       "Clingen-Gene-Disease-Summary.csv": [
@@ -24,5 +24,5 @@
     "probe_version": 2,
     "source_version": null
   },
-  "package": "clingen/2026-08-03"
+  "package": "clingen/2026-11-13"
 }

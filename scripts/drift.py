@@ -9,7 +9,8 @@ baseline. A failure outranks a drift, and is never reported as clean: a probe th
 could not run says nothing about its source.
 
 A baseline means "nothing changed since <captured_on>". It does not say the pinned
-package is current; the package may predate the baseline (ClinGen and GenCC do).
+package is current; the package may predate the baseline (on 2026-11-14 HGNC's did:
+``hgnc/2026-10-06`` against a baseline captured 2026-11-13).
 
 Three sources use hvantk's ``drift`` probe, read-only, through its ``--json`` output
 (installed at a pinned commit by the workflow); the two Orphanet XML products use
@@ -78,8 +79,8 @@ _ATLAS = "https://ftp.ebi.ac.uk/pub/databases/microarray/data/atlas/experiments/
 
 SOURCES: dict[str, Source] = {
     "hgnc": HvantkSource("hgnc:lookup", "hgnc/2026-10-06"),
-    "clingen": HvantkSource("clingen:gene-disease", "clingen/2026-08-03"),
-    "gencc": HvantkSource("gencc:submissions", "gencc/88c77272"),
+    "clingen": HvantkSource("clingen:gene-disease", "clingen/2026-11-13"),
+    "gencc": HvantkSource("gencc:submissions", "gencc/af6d7468"),
     "expression_atlas_e_mtab_6814": FilesSource(
         {
             "E-MTAB-6814-tpms.tsv": _ATLAS + "E-MTAB-6814-tpms.tsv",
@@ -249,8 +250,9 @@ def _issue_body(source_id: str, baseline: Mapping[str, Any], keys: list[str]) ->
         "(nothing changed since that date was the baseline's claim; it does not say the "
         "pinned package is current)\n"
         f"- Changed fingerprint keys:\n{listed}\n\n"
-        "Decide whether to rebuild the package, then refresh the baseline with "
-        "`scripts/drift.py --capture`.\n"
+        "Decide whether to rebuild the package, then refresh this baseline: set its "
+        "package in `SOURCES`, run `scripts/drift.py --capture` (it rewrites every "
+        "baseline) and restore the others from git.\n"
     )
 
 

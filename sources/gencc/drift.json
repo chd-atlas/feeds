@@ -1,5 +1,5 @@
 {
-  "captured_on": "2026-11-13",
+  "captured_on": "2026-11-14",
   "fingerprint": {
     "checksums": {
       "gencc-submissions.tsv": "6f07ac79f908bca4cfb99874e13d7d1ae5a9c839112baba0243b45fbc018f308"
@@ -45,5 +45,5 @@
     "probe_version": 2,
     "source_version": null
   },
-  "package": "gencc/88c77272"
+  "package": "gencc/af6d7468"
 }
