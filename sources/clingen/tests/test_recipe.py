@@ -10,6 +10,7 @@ columns named after the title, with no exception and no empty table.
 import gzip
 import hashlib
 import json
+import re
 from datetime import date
 from pathlib import Path
 
@@ -20,7 +21,6 @@ from sources.clingen import recipe
 
 BUILT_BY = {"host": "login01"}
 RECIPE_COMMIT = "a" * 40
-ATLAS_COMMIT = "4b1f8f68cbc30beaf932fbbc58e3617ebe401b6d"
 
 COLUMNS = [
     "gene",
@@ -88,7 +88,6 @@ def test_the_banner_is_the_version_and_separator_rows_are_not_data(tmp_path: Pat
         commit_of=lambda: RECIPE_COMMIT,
     )
     manifest, table = _read_package(out)
-    # Not the bootstrap constant's date, so a build that took MIRROR_BANNER would differ.
     assert manifest["version"] == "2026-11-11"
     assert manifest["ids"] == "hgnc_id"
     assert manifest["coverage"] == "every_gene"
@@ -150,52 +149,72 @@ def test_a_banner_without_a_creation_date_is_refused(tmp_path: Path) -> None:
         recipe.read_rows(path)
 
 
-def _mirror(tmp_path: Path) -> Path:
-    _, rows = recipe.read_rows(_csv(tmp_path))
-    text = "\n".join("\t".join(r) for r in [tuple(COLUMNS), *rows]) + "\n"
-    path = tmp_path / "clingen_gene_validity.tsv"
-    path.write_text(text, encoding="utf-8")
-    return path
+# FOXE3 / familial TAAD / AD, curated by two GCEPs: the real pair in ClinGen's 2026-11-13
+# file (F28). The Heritable (HTAAD) row comes first here, the order that sorts wrong:
+# "Hereditary" < "Heritable", so a sort that ignores the panel keeps input order.
+_FOXE3_HTAAD = (
+    '"FOXE3","HGNC:3808","familial thoracic aortic aneurysm and aortic dissection",'
+    '"MONDO:0019625","AD","SOP4","Moderate",'
+    '"https://search.clinicalgenome.org/kb/gene-validity/CGGCIEX:assertion_8261",'
+    '"2016-06-15T00:00:00",'
+    '"Heritable Thoracic Aortic Aneurysm and Dissection Gene Curation Expert Panel"\n'
+)
+_FOXE3_HCVD = (
+    '"FOXE3","HGNC:3808","familial thoracic aortic aneurysm and aortic dissection",'
+    '"MONDO:0019625","AD","SOP12","Limited",'
+    '"https://search.clinicalgenome.org/kb/gene-validity/CGGV:assertion_982f5f02-596f-4dfa-'
+    'a019-147934f6509b-2026-06-19T160000.000Z","2026-06-19T16:00:00.000Z",'
+    '"Hereditary Cardiovascular Disease Gene Curation Expert Panel"\n'
+)
 
 
-def test_the_bootstrap_refuses_any_other_bytes_and_states_its_origin(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    mirror = _mirror(tmp_path)
-    kwargs = {"revision": 1, "built_by": BUILT_BY, "commit_of": lambda: RECIPE_COMMIT}
-
-    # Another file is refused, unpatched: the real pinned hash is not this file's.
-    with pytest.raises(PackageRefused, match="sha256"):
-        recipe.bootstrap(mirror, atlas_commit=ATLAS_COMMIT, out=tmp_path / "a", **kwargs)  # type: ignore[arg-type]
-    assert not (tmp_path / "a").exists()
-
-    monkeypatch.setattr(recipe, "MIRROR_SHA256", hashlib.sha256(mirror.read_bytes()).hexdigest())
-    with pytest.raises(PackageRefused, match="pinned"):
-        recipe.bootstrap(mirror, atlas_commit="4b1f8f6", out=tmp_path / "b", **kwargs)  # type: ignore[arg-type]
-    # A well-formed 40-hex commit that is not the pinned one is refused too.
-    with pytest.raises(PackageRefused, match="pinned"):
-        recipe.bootstrap(mirror, atlas_commit="b" * 40, out=tmp_path / "b2", **kwargs)  # type: ignore[arg-type]
-
-    out = recipe.bootstrap(mirror, atlas_commit=ATLAS_COMMIT, out=tmp_path / "c", **kwargs)  # type: ignore[arg-type]
+def test_two_panels_on_one_triple_are_both_written_in_panel_order(tmp_path: Path) -> None:
+    out = recipe.build(
+        _csv(tmp_path, BANNER + _FOXE3_HTAAD + _FOXE3_HCVD),
+        retrieved_on=date(2026, 11, 13),
+        revision=1,
+        built_by=BUILT_BY,
+        out=tmp_path / "pkg",
+        commit_of=lambda: RECIPE_COMMIT,
+    )
     manifest, table = _read_package(out)
-    assert manifest["version"] == "2026-08-03"
-    assert manifest["source"]["version"] == "FILE CREATED: 2026-08-03"  # type: ignore[index]
-    assert manifest["source"]["retrieved_on"] == "2026-08-03"  # type: ignore[index]
-    (entry,) = manifest["inputs"]  # type: ignore[misc]
-    assert entry == {
-        "name": "clingen_gene_validity.tsv",
-        "url": "https://raw.githubusercontent.com/chd-atlas/chd-atlas.github.io/"
-        f"{ATLAS_COMMIT}/mirrors/clingen_gene_validity.tsv",
-        "sha256": hashlib.sha256(mirror.read_bytes()).hexdigest(),
-        "retrieved_on": "2026-08-03",
-        "upstream_release": "FILE CREATED: 2026-08-03",
-    }
-    assert manifest["input_counts"] == {"rows": 4, "genes": 2}
-    assert table[0] == COLUMNS and len(table) == 5
+    assert [row[COLUMNS.index("gcep")] for row in table[1:]] == [
+        "Hereditary Cardiovascular Disease Gene Curation Expert Panel",
+        "Heritable Thoracic Aortic Aneurysm and Dissection Gene Curation Expert Panel",
+    ]
+    assert [row[COLUMNS.index("classification")] for row in table[1:]] == ["Limited", "Moderate"]
+    (entry,) = manifest["tables"]  # type: ignore[misc]
+    assert entry["format_version"] == 2
+    assert manifest["input_counts"] == {"rows": 2, "genes": 1}
 
-    # A mirror whose header is not the table's column order is refused.
-    bad = tmp_path / "bad.tsv"
-    bad.write_text(mirror.read_text().replace("report_url", "url"), encoding="utf-8")
-    monkeypatch.setattr(recipe, "MIRROR_SHA256", hashlib.sha256(bad.read_bytes()).hexdigest())
-    with pytest.raises(PackageRefused, match="header"):
-        recipe.bootstrap(bad, atlas_commit=ATLAS_COMMIT, out=tmp_path / "d", **kwargs)  # type: ignore[arg-type]
+
+_FOXE3_HTAAD_RELABELLED = _FOXE3_HTAAD.replace(
+    "Heritable Thoracic Aortic Aneurysm and Dissection Gene Curation Expert Panel",
+    "Hereditary Cardiovascular Disease Gene Curation Expert Panel",
+)
+
+
+@pytest.mark.parametrize(
+    "first",
+    [_FOXE3_HTAAD_RELABELLED, _FOXE3_HCVD],
+    ids=["another-record-same-panel", "verbatim-repeat"],
+)
+def test_one_panel_twice_on_a_triple_is_refused(tmp_path: Path, first: str) -> None:
+    """The same GCEP twice on one triple is a duplicate the owner rules on, never deduplicated.
+
+    Both shapes: a different record under the same panel, and the same line repeated
+    verbatim, which a set-based tidy would silently collapse.
+    """
+    assert _FOXE3_HTAAD_RELABELLED != _FOXE3_HTAAD
+    # The v2 key, panel included: under v1 the same file is refused on the triple alone.
+    key = "('HGNC:3808', 'MONDO:0019625', 'AD', 'Hereditary Cardiovascular Disease"
+    with pytest.raises(PackageRefused, match=re.escape(f"primary key {key}")):
+        recipe.build(
+            _csv(tmp_path, BANNER + first + _FOXE3_HCVD),
+            retrieved_on=date(2026, 11, 13),
+            revision=1,
+            built_by=BUILT_BY,
+            out=tmp_path / "pkg",
+            commit_of=lambda: RECIPE_COMMIT,
+        )
+    assert not (tmp_path / "pkg").exists()

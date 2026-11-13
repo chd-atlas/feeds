@@ -19,21 +19,24 @@ nor dropped. ``ids`` is ``hgnc_id`` (the CSV carries the HGNC id itself) and the
 package covers every gene ClinGen has curated; the atlas does not registry-filter
 this table on ingest because its gene registry is derived from it.
 
-TWO ENTRY POINTS
-----------------
-``build`` parses a live download. ``bootstrap`` (owner decision F21) packages the
-atlas's committed mirror ``mirrors/clingen_gene_validity.tsv`` at one named atlas
-commit, once, because the 2026-08-03 download is no longer retrievable: ClinGen
-serves only the current file. It refuses any other bytes. The two are kept
-apart so that the live parser is never asked to read a mirror and a mirror is never
-passed off as a download; the manifest's input URL is the raw permalink at the atlas
-commit, and its ``upstream_release`` is the banner text of the file the mirror was
-made from.
+ONE ENTRY POINT
+---------------
+``build`` parses a live download. The first package, ``clingen/2026-08-03``, was
+bootstrapped from the atlas's committed mirror (owner decision F21) by a
+``bootstrap`` entry point that is gone: under ``clingen_validity`` v2 it could no
+longer reproduce that v1 release, and code that cannot reproduce its own release is
+a trap. The release stays published; git history holds the code that built it.
 
-Measured 2026-11-11, by running ``build`` on that day's download: it stops in
-``write_package`` with exactly one primary-key error, a repeated (gene, disease, moi)
-key for FOXE3 ('HGNC:3808', 'MONDO:0019625', 'AD'). ``read_rows`` is pure, so row
-parity with the atlas converter can be measured without packaging.
+THE KEY INCLUDES THE PANEL (``clingen_validity`` v2, F28)
+---------------------------------------------------------
+Measured 2026-11-11 on that day's download, under v1: ``build`` stopped in
+``write_package`` with exactly one primary-key error, FOXE3 ('HGNC:3808',
+'MONDO:0019625', 'AD') curated twice -- SOP4 Moderate 2016 by the Heritable Thoracic
+Aortic Aneurysm and Dissection GCEP and SOP12 Limited 2026 by the Hereditary
+Cardiovascular Disease GCEP. Both are kept, as GenCC's table keeps every submitter's
+row, so the key is (gene, disease, moi, gcep): unique on all 3,731 rows of the
+2026-11-13 file. One GCEP twice on one triple is still refused, never deduplicated.
+``read_rows`` is pure, so row parity can be measured without packaging.
 """
 
 from __future__ import annotations
@@ -74,22 +77,14 @@ _COLUMNS: Final[dict[str, str]] = {
     "ONLINE REPORT": "report_url",
 }
 ORDER: Final = tuple(_COLUMNS.values())
-_SORT_AT = (ORDER.index("gene"), ORDER.index("disease"), ORDER.index("moi"))
-
-# The atlas's committed mirror at the bootstrap commit (atlas 4b1f8f6).
-MIRROR_NAME: Final = "clingen_gene_validity.tsv"
-MIRROR_SHA256: Final = "b4c89cb6b0bbb5016894661ef9add7b432b91240118e5b89e55fd3dc7e6ec1d1"
-MIRROR_BANNER: Final = "FILE CREATED: 2026-08-03"
-MIRROR_RETRIEVED_ON: Final = date(2026, 8, 3)
-# The atlas commit whose mirror this is; the manifest URL is a permanent permalink to it.
-ATLAS_COMMIT: Final = "4b1f8f68cbc30beaf932fbbc58e3617ebe401b6d"
-_ATLAS_RAW = "https://raw.githubusercontent.com/chd-atlas/chd-atlas.github.io"
+_SORT_AT = tuple(ORDER.index(column) for column in ("gene", "disease", "moi", "gcep"))
 
 
 def read_rows(csv_path: Path) -> tuple[str, list[tuple[str, ...]]]:
     """``(banner text, rows)``: the ``FILE CREATED`` line and the rows in table order.
 
-    Rows are sorted by ``(gene, disease, moi)``. Pure: no package is written.
+    Rows are sorted by ``(gene, disease, moi, gcep)``, the v2 key. Pure: no package
+    is written.
     """
     with csv_path.open(encoding="utf-8", newline="") as handle:
         records = list(csv.reader(handle))
@@ -145,7 +140,7 @@ def _write(
         ),
         ids="hgnc_id",
         coverage="every_gene",
-        tables=[TableOut("clingen_validity", 1, ORDER, cells, "gene")],
+        tables=[TableOut("clingen_validity", 2, ORDER, cells, "gene")],
         inputs=inputs,
         input_counts={"rows": len(rows), "genes": len({row[0] for row in rows})},
         dropped=[],
@@ -192,64 +187,6 @@ def build(
             }
         ],
         retrieved_on=retrieved_on,
-        revision=revision,
-        sha256=sha256,
-        built_by=built_by,
-        out=out,
-    )
-
-
-def bootstrap(
-    mirror: Path,
-    *,
-    atlas_commit: str,
-    revision: int,
-    built_by: dict[str, Any],
-    out: Path,
-    commit_of: CommitOf = current_commit,
-) -> Path:
-    """Package the atlas's committed mirror at ``atlas_commit`` (decision F21), once.
-
-    Refuses any ``atlas_commit`` but ``ATLAS_COMMIT``, any file whose sha256 is not
-    ``MIRROR_SHA256`` and any header that is not the table's column order.
-    """
-    built_by, _ = stamp(built_by, commit_of)
-    if atlas_commit != ATLAS_COMMIT:
-        raise PackageRefused(
-            f"atlas_commit {atlas_commit!r} is not the pinned {ATLAS_COMMIT}; the mirror's "
-            "permalink must name the commit it was read at"
-        )
-    data = mirror.read_bytes()
-    sha256 = hashlib.sha256(data).hexdigest()
-    if sha256 != MIRROR_SHA256:
-        raise PackageRefused(
-            f"{mirror.name} has sha256 {sha256}, not the pinned {MIRROR_SHA256}; "
-            "the bootstrap packages the atlas's mirror at one commit only"
-        )
-    lines = data.decode("utf-8").splitlines()
-    if tuple(lines[0].split("\t")) != ORDER:
-        raise PackageRefused(
-            f"{mirror.name}: header {lines[0]!r} is not the table's column order {list(ORDER)}"
-        )
-    rows: list[tuple[str, ...]] = []
-    for number, line in enumerate(lines[1:], start=2):
-        cells = tuple(line.split("\t"))
-        if len(cells) != len(ORDER):
-            raise PackageRefused(f"{mirror.name} line {number}: {len(cells)} cells")
-        rows.append(cells)
-    return _write(
-        rows,
-        banner=MIRROR_BANNER,
-        inputs=[
-            {
-                "name": MIRROR_NAME,
-                "url": f"{_ATLAS_RAW}/{atlas_commit}/mirrors/{MIRROR_NAME}",
-                "sha256": sha256,
-                "retrieved_on": MIRROR_RETRIEVED_ON.isoformat(),
-                "upstream_release": MIRROR_BANNER,
-            }
-        ],
-        retrieved_on=MIRROR_RETRIEVED_ON,
         revision=revision,
         sha256=sha256,
         built_by=built_by,
