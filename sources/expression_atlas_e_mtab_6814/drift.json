@@ -1,0 +1,17 @@
+{
+  "captured_on": "2026-11-13",
+  "fingerprint": {
+    "checksums": {
+      "experiments.json": "7386f557bb6ddb42a08f3600d0d7e7ecb968dffac66ca4c7681fcba4ce45cbc9"
+    },
+    "headers": {
+      "experiments.json": [
+        "experimentAccession",
+        "lastUpdate"
+      ]
+    },
+    "probe_version": 1,
+    "source_version": "4562 experiments"
+  },
+  "package": "expression_atlas_e_mtab_6814/92484a97"
+}

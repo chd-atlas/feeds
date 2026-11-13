@@ -66,6 +66,30 @@ Every recipe fills the same manifest fields the same way.
   tag whose assets differ, so such a rebuild needs a new revision before it can be
   published.
 
+## Drift
+
+`.github/workflows/drift.yml` runs `scripts/drift.py` every Monday (and on
+`workflow_dispatch`). It probes each upstream source below, compares the result with
+`sources/<id>/drift.json` and prints a report; on the schedule it opens or updates one
+issue per drifted source, titled `drift: <id>`. Exit code 0 means every source matches
+its baseline, 1 that one drifted, 2 that a probe failed or a baseline is missing: a probe
+that could not run is never reported as clean.
+
+- HGNC, ClinGen, GenCC and Expression Atlas use hvantk's `drift` probes, read-only, from
+  an hvantk install pinned by commit in the workflow. Only hvantk's `observed` fingerprint
+  is used; the baseline is this repository's own file, not the one packaged in hvantk.
+- Orphanet products 1 and 4 use `orphadata_probe`: the `<JDBOR>` version and date from
+  the first 4 KB of the file.
+- Mondo has no probe: it is pinned to a dated release URL, which cannot change.
+- `audain2021_s6` and `audain2026_sd3` have no probe: they are fixed supplement files.
+
+**What a baseline means.** `drift.json` says "nothing changed since `captured_on`" (all six
+were captured on 2026-11-13). It does not say the pinned package is current. ClinGen and
+GenCC are pinned to their 2026-08-03 bootstrap, so the packages predate their baselines:
+the first drift report for either says the source moved since the baseline, not since the
+package. To refresh the baselines after deciding what to rebuild, run
+`scripts/drift.py --capture` (it writes nothing unless every probe answered).
+
 ## Making a release
 
 1. Merge the recipe to `dev` (the release guard refuses a `recipe_commit` that
