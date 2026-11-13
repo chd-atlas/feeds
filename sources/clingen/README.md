@@ -1,17 +1,21 @@
 # clingen
 
 ClinGen Gene-Disease Validity bulk CSV (CC0-1.0) as the `clingen` package: table
-`clingen_validity` v1, `ids: hgnc_id`, `coverage: every_gene`. Version is the
+`clingen_validity` v2, `ids: hgnc_id`, `coverage: every_gene`. Version is the
 banner's `FILE CREATED` date; `source.version` is the banner text.
 
-Two entry points in `recipe.py`:
+`recipe.build(csv, retrieved_on=..., revision=..., built_by=..., out=...)` parses a
+live download from `https://search.clinicalgenome.org/kb/gene-validity/download`.
 
-- `build(csv, retrieved_on=..., revision=..., built_by=..., out=...)` parses a live
-  download from `https://search.clinicalgenome.org/kb/gene-validity/download`.
-- `bootstrap(mirror, atlas_commit=..., ...)` packages the atlas's committed
-  `mirrors/clingen_gene_validity.tsv` once (decision F21), because the 2026-08-03
-  download cannot be fetched again. It accepts only the file with sha256
-  `b4c89cb6...` (atlas 4b1f8f6, 3,653 rows, 3,017 genes).
+**v2 (F28): the key is (gene, disease, moi, gcep).** ClinGen's file lists FOXE3 /
+MONDO:0019625 / AD twice, by two GCEPs (SOP4 Moderate 2016, SOP12 Limited 2026); both
+rows are kept, sorted by panel. One GCEP twice on one triple is refused, never
+deduplicated.
+
+**No `bootstrap`.** The first release, `clingen/2026-08-03` (table v1), was
+bootstrapped from the atlas's committed mirror at atlas 4b1f8f6 (decision F21). Under
+v2 that entry point could no longer reproduce its own release, so it was deleted; the
+release stays published, and git history holds the code that built it.
 
 ## Build
 
@@ -36,34 +40,16 @@ recipe.build(
 )
 ```
 
-Bootstrap, from the atlas mirror at the pinned commit (`recipe.ATLAS_COMMIT`,
-`4b1f8f68cbc30beaf932fbbc58e3617ebe401b6d`; any other `atlas_commit` is refused, because
-the manifest's input URL is a permanent permalink to it):
-
-```bash
-mkdir -p local/clingen
-git -C <atlas> show 4b1f8f6:mirrors/clingen_gene_validity.tsv > local/clingen/clingen_gene_validity.tsv
-```
-
-```python
-recipe.bootstrap(
-    Path("local/clingen/clingen_gene_validity.tsv"),
-    atlas_commit=recipe.ATLAS_COMMIT,
-    revision=1,
-    built_by={"host": "<machine>"},
-    out=Path("dist/clingen"),
-)
-```
-
 ## Measurements
 
 - Live parity, 2026-11-12: `read_rows` over the 2026-11-11 download (3,730 rows)
   rendered as TSV is `cmp`-equal to the atlas's `scripts/convert_clingen.py`
-  (archive of atlas 4b1f8f6) on the same file.
-- That download repeats the (gene, disease, moi) key for FOXE3, which the table's
-  primary key refuses, so `build` on it stops in `write_package`; parity is row-level.
-- A bootstrap build of the real mirror into a scratch directory succeeded.
+  (archive of atlas 4b1f8f6) on the same file, under v1's sort. v2 also sorts by panel,
+  which reorders only FOXE3's two rows (v1's stable sort left them in file order, HTAAD
+  first).
+- That download repeats the v1 (gene, disease, moi) key for FOXE3, which v1's primary
+  key refused, so `build` on it stopped in `write_package`; parity is row-level.
 
 ## Tests
 
-`pytest sources/clingen`: synthetic CSV and mirror, no network.
+`pytest sources/clingen`: synthetic CSV, no network.
