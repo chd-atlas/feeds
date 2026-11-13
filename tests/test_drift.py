@@ -413,3 +413,37 @@ def test_hvantk_answering_for_another_dataset_is_a_probe_failure(
     for bad in (wrong, unnamed):
         assert _run(root, hvantk=bad) == 2
         assert "hgnc: PROBE FAILED" in capsys.readouterr().out
+
+
+class _FakeResponse:
+    def __init__(self, body: bytes, status: int = 200, length: int | None = None) -> None:
+        self._body, self.status = body, status
+        self.headers: dict[str, str] = {} if length is None else {"Content-Length": str(length)}
+
+    def read(self, n: int = -1) -> bytes:
+        chunk, self._body = self._body[:n], self._body[n:]
+        return chunk
+
+    def __enter__(self) -> _FakeResponse:
+        return self
+
+    def __exit__(self, *_a: object) -> None:
+        return None
+
+
+def test_a_truncated_or_partial_download_is_not_fingerprinted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+
+    def serve(response: _FakeResponse) -> None:
+        monkeypatch.setattr(drift.urllib.request, "urlopen", lambda *_a, **_k: response)
+
+    serve(_FakeResponse(b"abc", 200, 3))
+    assert drift.http_stream("u") == (hashlib.sha256(b"abc").hexdigest(), 3)
+    serve(_FakeResponse(b"abc", 200, None))  # no Content-Length: nothing to check against
+    assert drift.http_stream("u")[1] == 3
+    for bad in (_FakeResponse(b"abc", 200, 5_000_000), _FakeResponse(b"abc", 206, 3)):
+        serve(bad)
+        with pytest.raises(OSError):
+            drift.http_stream("u")

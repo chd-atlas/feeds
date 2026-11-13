@@ -168,9 +168,14 @@ def http_stream(url: str) -> tuple[str, int]:
     """The sha256 and byte count of a URL's whole body, hashed as it streams."""
     digest, size = hashlib.sha256(), 0
     with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310
+        if response.status != 200:
+            raise OSError(f"HTTP {response.status}, expected 200")
         while chunk := response.read(1 << 20):
             digest.update(chunk)
             size += len(chunk)
+        declared = response.headers.get("Content-Length")
+        if declared is not None and int(declared) != size:
+            raise OSError(f"read {size} bytes of a declared {declared}")
     return digest.hexdigest(), size
 
 
