@@ -255,3 +255,161 @@ def test_capture_writes_baselines_only_when_every_probe_answered(tmp_path: Path)
     assert written["package"] == "hgnc/v1"  # the spec's pinned package
     assert written["fingerprint"]["checksums"] == {"f.csv": "cccc"}
     assert "fetched_at" not in written["fingerprint"]
+
+
+def _stream_for(digests: dict[str, tuple[str, int]]) -> Callable[[str], tuple[str, int]]:
+    return lambda url: digests[url.rsplit("/", 1)[1]]
+
+
+def _files() -> Any:
+    return drift.FilesSource(
+        {"a.tsv": "https://example.org/x/a.tsv", "b.xml": "https://example.org/x/b.xml"},
+        "files_src/v1",
+    )
+
+
+def test_the_expression_atlas_source_is_fingerprinted_by_its_own_input_files() -> None:
+    from sources.expression_atlas_e_mtab_6814 import recipe
+
+    spec = drift.SOURCES["expression_atlas_e_mtab_6814"]
+    assert isinstance(spec, drift.FilesSource)
+    assert spec.urls == {
+        recipe.MATRIX_NAME: recipe.MATRIX_URL,
+        recipe.CONFIGURATION_NAME: recipe.CONFIGURATION_URL,
+    }
+    baseline = json.loads(
+        (_PATH.parent.parent / "sources" / recipe.SOURCE / "drift.json").read_text()
+    )
+    got = {n: v["sha256"] for n, v in baseline["fingerprint"].items()}
+    assert got == {
+        recipe.MATRIX_NAME: recipe.MATRIX_SHA256,
+        recipe.CONFIGURATION_NAME: recipe.CONFIGURATION_SHA256,
+    }
+    digests = {"a.tsv": ("aa", 5), "b.xml": ("bb", 7)}
+    fp = drift.probe(_files(), _unused_hvantk, _unused_fetch, _stream_for(digests))
+    assert fp == {"a.tsv": {"sha256": "aa", "size": 5}, "b.xml": {"sha256": "bb", "size": 7}}
+    assert drift.compare(fp, fp) == []
+    digests["b.xml"] = ("cc", 7)
+    changed = drift.probe(_files(), _unused_hvantk, _unused_fetch, _stream_for(digests))
+    assert drift.compare(fp, changed) == ["b.xml/sha256"]
+
+    def down(_url: str) -> tuple[str, int]:
+        raise OSError("down")
+
+    with pytest.raises(drift.ProbeFailed):
+        drift.probe(_files(), _unused_hvantk, _unused_fetch, down)
+
+
+def _unused_hvantk(dataset: str, timeout: int) -> tuple[int, str]:
+    raise AssertionError("hvantk was called")
+
+
+def _unused_fetch(url: str, nbytes: int) -> bytes:
+    raise AssertionError("fetch was called")
+
+
+def _run(
+    root: Path,
+    *,
+    flags: list[str] | None = None,
+    hvantk: Any = None,
+    fetch: Any = None,
+    gh: Any = _no_gh,
+) -> int:
+    return int(
+        drift.main(
+            ["--baselines", str(root), *(flags or [])],
+            hvantk=hvantk or _hvantk_ok(_hvantk_observed()),
+            fetch=fetch or _fetch_for("1"),
+            gh=gh,
+            sources=_specs(),
+        )
+    )
+
+
+@pytest.mark.parametrize("fingerprint", ["text", ["a"], None, 3])
+def test_a_baseline_without_a_mapping_fingerprint_fails_that_source_only(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], fingerprint: Any
+) -> None:
+    root, _ = _fixture(tmp_path)
+    (root / "hgnc" / "drift.json").write_text(
+        json.dumps({"captured_on": "d", "package": "p", "fingerprint": fingerprint})
+    )
+    assert _run(root) == 2
+    out = capsys.readouterr().out
+    assert "hgnc: PROBE FAILED" in out
+    assert "orphanet_product4: clean" in out
+    (root / "hgnc" / "drift.json").write_text("[1]")  # not even an object
+    assert _run(root) == 2
+    assert "orphanet_product4: clean" in capsys.readouterr().out
+
+
+def test_a_gh_failure_is_reported_continues_and_makes_the_run_incomplete(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, _ = _fixture(tmp_path)
+    calls: list[list[str]] = []
+
+    def gh(argv: list[str]) -> str:
+        calls.append(argv)
+        raise OSError("gh not found")
+
+    # both sources drift; the first gh failure must not stop the second from being tried
+    code = _run(
+        root,
+        flags=["--open-issues"],
+        hvantk=_hvantk_ok(_hvantk_observed(checksums={"f.csv": "bbbb"})),
+        fetch=_fetch_for("2"),
+        gh=gh,
+    )
+    out = capsys.readouterr().out
+    assert code == 2
+    assert len(calls) == 2
+    assert "hgnc: ISSUE FAILED" in out and "orphanet_product4: ISSUE FAILED" in out
+    assert "hgnc: DRIFTED" in out and "orphanet_product4: DRIFTED" in out
+
+    def bad_json(argv: list[str]) -> str:
+        return "not json"
+
+    assert (
+        _run(
+            root,
+            flags=["--open-issues"],
+            hvantk=_hvantk_ok(_hvantk_observed(checksums={"f.csv": "bbbb"})),
+            gh=bad_json,
+        )
+        == 2
+    )
+
+
+def test_an_empty_fingerprint_is_a_probe_failure_even_against_an_empty_baseline(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = tmp_path
+    _write_baselines(root, {"hgnc": {}, "orphanet_product4": {"version": "1", "date": "d"}})
+    only_noise = {
+        "informational": {"last_modified": "Mon"},
+        "fetched_at": "2026-11-13T00:00:00+00:00",
+    }
+    assert _run(root, hvantk=_hvantk_ok(only_noise)) == 2
+    assert "hgnc: PROBE FAILED" in capsys.readouterr().out
+    empty = drift.FilesSource({}, "e/v1")
+    with pytest.raises(drift.ProbeFailed):
+        drift.probe(empty, _unused_hvantk, _unused_fetch, lambda _u: ("", 0))
+
+
+def test_hvantk_answering_for_another_dataset_is_a_probe_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, _ = _fixture(tmp_path)
+
+    def wrong(dataset: str, timeout: int) -> tuple[int, str]:
+        entry = {"dataset_name": "other:thing", "status": "clean"}
+        return 0, json.dumps([entry | {"observed": _hvantk_observed()}])
+
+    def unnamed(dataset: str, timeout: int) -> tuple[int, str]:
+        return 0, json.dumps([{"status": "clean", "observed": _hvantk_observed()}])
+
+    for bad in (wrong, unnamed):
+        assert _run(root, hvantk=bad) == 2
+        assert "hgnc: PROBE FAILED" in capsys.readouterr().out

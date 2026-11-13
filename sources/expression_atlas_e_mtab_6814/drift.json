@@ -1,17 +1,14 @@
 {
   "captured_on": "2026-11-13",
   "fingerprint": {
-    "checksums": {
-      "experiments.json": "7386f557bb6ddb42a08f3600d0d7e7ecb968dffac66ca4c7681fcba4ce45cbc9"
+    "E-MTAB-6814-configuration.xml": {
+      "sha256": "31de8dd2c78067cba2a333527d1af123e9d497443c4acdf7c5dea2da115b166f",
+      "size": 23966
     },
-    "headers": {
-      "experiments.json": [
-        "experimentAccession",
-        "lastUpdate"
-      ]
-    },
-    "probe_version": 1,
-    "source_version": "4562 experiments"
+    "E-MTAB-6814-tpms.tsv": {
+      "sha256": "92484a979fb8e262fe1f535b2b902ba8088310bbbec76969ba873b51d593f4be",
+      "size": 89757820
+    }
   },
   "package": "expression_atlas_e_mtab_6814/92484a97"
 }

@@ -11,9 +11,12 @@ could not run says nothing about its source.
 A baseline means "nothing changed since <captured_on>". It does not say the pinned
 package is current; the package may predate the baseline (ClinGen and GenCC do).
 
-Four sources use hvantk's ``drift`` probe, read-only, through its ``--json`` output
+Three sources use hvantk's ``drift`` probe, read-only, through its ``--json`` output
 (installed at a pinned commit by the workflow); the two Orphanet XML products use
-``orphadata_probe``, which reads the ``<JDBOR>`` version and date from the first 4 KB.
+``orphadata_probe``, which reads the ``<JDBOR>`` version and date from the first 4 KB;
+Expression Atlas E-MTAB-6814 is fingerprinted by streaming the package's own two input
+files (``files_probe``: sha256 and size), because hvantk's probe fingerprints the whole
+Atlas catalogue and fires whenever any experiment is updated.
 hvantk's own verdict, ``expected`` and ``diff`` are ignored: its ``expected`` is a
 fingerprint packaged inside hvantk, not this repository's baseline.
 """
@@ -22,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import re
 import subprocess
@@ -43,6 +47,7 @@ COMPARED = ("probe_version", "source_version", "headers", "checksums", "extras")
 Fetch = Callable[[str, int], bytes]
 Hvantk = Callable[[str, int], tuple[int, str]]
 Gh = Callable[[list[str]], str]
+Stream = Callable[[str], tuple[str, int]]
 
 
 class ProbeFailed(Exception):
@@ -61,14 +66,26 @@ class OrphadataSource:
     package: str
 
 
-Source = HvantkSource | OrphadataSource
+@dataclass(frozen=True)
+class FilesSource:
+    urls: Mapping[str, str]  # input file name -> URL, the ones the package was built from
+    package: str
+
+
+Source = HvantkSource | OrphadataSource | FilesSource
+
+_ATLAS = "https://ftp.ebi.ac.uk/pub/databases/microarray/data/atlas/experiments/E-MTAB-6814/"
 
 SOURCES: dict[str, Source] = {
     "hgnc": HvantkSource("hgnc:lookup", "hgnc/2026-10-06"),
     "clingen": HvantkSource("clingen:gene-disease", "clingen/2026-08-03"),
     "gencc": HvantkSource("gencc:submissions", "gencc/88c77272"),
-    "expression_atlas_e_mtab_6814": HvantkSource(
-        "expression-atlas:dataset", "expression_atlas_e_mtab_6814/92484a97"
+    "expression_atlas_e_mtab_6814": FilesSource(
+        {
+            "E-MTAB-6814-tpms.tsv": _ATLAS + "E-MTAB-6814-tpms.tsv",
+            "E-MTAB-6814-configuration.xml": _ATLAS + "E-MTAB-6814-configuration.xml",
+        },
+        "expression_atlas_e_mtab_6814/92484a97",
     ),
     "orphanet_product4": OrphadataSource(
         "https://www.orphadata.com/data/xml/en_product4.xml", "orphanet_product4/4f44e8a6"
@@ -133,6 +150,30 @@ def orphadata_probe(url: str, fetch: Fetch) -> dict[str, str]:
     return {"version": version, "date": date}
 
 
+def files_probe(urls: Mapping[str, str], stream: Stream) -> dict[str, dict[str, Any]]:
+    """``{name: {sha256, size}}`` of each file, read in full from its URL."""
+    out: dict[str, dict[str, Any]] = {}
+    for name, url in sorted(urls.items()):
+        try:
+            sha256, size = stream(url)
+        except Exception as exc:
+            raise ProbeFailed(f"{url}: {type(exc).__name__}: {exc}") from exc
+        if not sha256 or size <= 0:
+            raise ProbeFailed(f"{url}: read {size} bytes")
+        out[name] = {"sha256": sha256, "size": size}
+    return out
+
+
+def http_stream(url: str) -> tuple[str, int]:
+    """The sha256 and byte count of a URL's whole body, hashed as it streams."""
+    digest, size = hashlib.sha256(), 0
+    with urllib.request.urlopen(url, timeout=60) as response:  # noqa: S310
+        while chunk := response.read(1 << 20):
+            digest.update(chunk)
+            size += len(chunk)
+    return digest.hexdigest(), size
+
+
 def http_fetch(url: str, nbytes: int) -> bytes:
     """The first ``nbytes`` of a URL (a Range request; reads at most ``nbytes`` regardless)."""
     request = urllib.request.Request(url, headers={"Range": f"bytes=0-{nbytes - 1}"})
@@ -168,6 +209,10 @@ def _hvantk_probe(dataset: str, hvantk: Hvantk) -> dict[str, Any]:
         raise ProbeFailed(f"hvantk drift {dataset}: exit {code}, unreadable output") from exc
     if not isinstance(entry, dict):
         raise ProbeFailed(f"hvantk drift {dataset}: exit {code}, unreadable output")
+    if entry.get("dataset_name") != dataset:
+        raise ProbeFailed(
+            f"hvantk drift {dataset}: answered for dataset {entry.get('dataset_name')!r}"
+        )
     if entry.get("status") == "probe_failed":
         raise ProbeFailed(f"hvantk drift {dataset}: {entry.get('probe_error') or 'probe_failed'}")
     observed = entry.get("observed")
@@ -176,10 +221,18 @@ def _hvantk_probe(dataset: str, hvantk: Hvantk) -> dict[str, Any]:
     return fingerprint_of_hvantk(observed)
 
 
-def probe(spec: Source, hvantk: Hvantk, fetch: Fetch) -> dict[str, Any]:
+def probe(spec: Source, hvantk: Hvantk, fetch: Fetch, stream: Stream) -> dict[str, Any]:
+    fingerprint: dict[str, Any]
     if isinstance(spec, HvantkSource):
-        return _hvantk_probe(spec.dataset, hvantk)
-    return dict(orphadata_probe(spec.url, fetch))
+        fingerprint = _hvantk_probe(spec.dataset, hvantk)
+    elif isinstance(spec, FilesSource):
+        fingerprint = dict(files_probe(spec.urls, stream))
+    else:
+        fingerprint = dict(orphadata_probe(spec.url, fetch))
+    if not _flat(fingerprint):
+        # nothing left to compare: an empty fingerprint equals an empty baseline
+        raise ProbeFailed(f"{spec.package}: the probe returned an empty fingerprint")
+    return fingerprint
 
 
 def _issue_body(source_id: str, baseline: Mapping[str, Any], keys: list[str]) -> str:
@@ -216,6 +269,7 @@ def main(
     *,
     hvantk: Hvantk = run_hvantk,
     fetch: Fetch = http_fetch,
+    stream: Stream = http_stream,
     gh: Gh = run_gh,
     sources: Mapping[str, Source] | None = None,
     today: str | None = None,
@@ -232,7 +286,7 @@ def main(
     failures: dict[str, str] = {}
     for source_id in sorted(specs):
         try:
-            observed[source_id] = probe(specs[source_id], hvantk, fetch)
+            observed[source_id] = probe(specs[source_id], hvantk, fetch, stream)
         except ProbeFailed as exc:
             failures[source_id] = str(exc)
 
@@ -258,9 +312,13 @@ def main(
         path = args.baselines / source_id / "drift.json"
         try:
             baseline = json.loads(path.read_text())
+            if not isinstance(baseline, dict) or not isinstance(
+                baseline.get("fingerprint"), Mapping
+            ):
+                raise TypeError("fingerprint is not a mapping")
             keys = compare(baseline["fingerprint"], observed[source_id])
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            failures[source_id] = f"no baseline: {path} unreadable ({type(exc).__name__})"
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            failures[source_id] = f"no baseline: {path} unusable ({type(exc).__name__}: {exc})"
             print(f"{source_id}: PROBE FAILED: {failures[source_id]}")
             continue
         if not keys:
@@ -269,7 +327,11 @@ def main(
         drifted += 1
         print(f"{source_id}: DRIFTED since {baseline.get('captured_on')}: {', '.join(keys)}")
         if args.open_issues:
-            _open_issue(gh, source_id, _issue_body(source_id, baseline, keys))
+            try:
+                _open_issue(gh, source_id, _issue_body(source_id, baseline, keys))
+            except Exception as exc:  # gh missing, not logged in, rate limited, bad output
+                failures[source_id] = f"{type(exc).__name__}: {exc}"
+                print(f"{source_id}: ISSUE FAILED: {failures[source_id]}")
     if failures:
         return 2
     return 1 if drifted else 0

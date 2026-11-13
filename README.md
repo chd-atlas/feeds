@@ -75,9 +75,14 @@ issue per drifted source, titled `drift: <id>`. Exit code 0 means every source m
 its baseline, 1 that one drifted, 2 that a probe failed or a baseline is missing: a probe
 that could not run is never reported as clean.
 
-- HGNC, ClinGen, GenCC and Expression Atlas use hvantk's `drift` probes, read-only, from
+- HGNC, ClinGen and GenCC use hvantk's `drift` probes, read-only, from
   an hvantk install pinned by commit in the workflow. Only hvantk's `observed` fingerprint
   is used; the baseline is this repository's own file, not the one packaged in hvantk.
+- Expression Atlas E-MTAB-6814 streams the two files its package was built from
+  (`E-MTAB-6814-tpms.tsv`, about 90 MB, and the configuration XML) and compares their
+  sha256 and size with the baseline, which equals the package manifest's `inputs`. hvantk's
+  Expression Atlas probe fingerprints the whole Atlas catalogue, so it would report drift
+  whenever any experiment is updated.
 - Orphanet products 1 and 4 use `orphadata_probe`: the `<JDBOR>` version and date from
   the first 4 KB of the file.
 - Mondo has no probe: it is pinned to a dated release URL, which cannot change.
