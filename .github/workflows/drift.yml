@@ -1,0 +1,43 @@
+name: drift
+# Has an upstream source changed since its baseline (sources/<id>/drift.json)? A probe that
+# fails makes this job fail; it is never read as "no drift". Issues are opened only on the
+# schedule or when dispatched with open_issues set.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      open_issues:
+        description: "Open or update one issue per drifted source"
+        type: boolean
+        default: false
+permissions:
+  issues: write
+  contents: read
+env:
+  # hvantk's drift probes, used read-only. hail is a hard dependency of hvantk but the four
+  # probes never start it (measured at this commit with no Java on PATH).
+  HVANTK_COMMIT: e23c05278fb9d7a3211faefbd622a1a90c2f2b72
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v5
+      - name: Install hvantk at the pinned commit
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/hvantk-venv"
+          uv pip install --python "$RUNNER_TEMP/hvantk-venv/bin/python" \
+            "hvantk @ git+https://github.com/bigbio/hvantk@${HVANTK_COMMIT}"
+          echo "$RUNNER_TEMP/hvantk-venv/bin" >> "$GITHUB_PATH"
+      - name: Check for drift
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPEN_ISSUES: ${{ github.event_name == 'schedule' || inputs.open_issues }}
+        run: |
+          flags=""
+          if [ "$OPEN_ISSUES" = "true" ]; then flags="--open-issues"; fi
+          python3 scripts/drift.py $flags
