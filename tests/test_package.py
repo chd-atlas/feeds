@@ -255,6 +255,18 @@ def _kw(tables: list[TableOut] | None = None, **over: object) -> dict[str, objec
             "one of file_version and file_date",
             id="file-date-without-its-version",
         ),
+        pytest.param(
+            "SRC002/ING010",
+            _kw(source={**package_kwargs()["source"], "file_version": " ", "file_date": "d"}),
+            "blank file_version or file_date",
+            id="blank-file-version",
+        ),
+        pytest.param(
+            "SRC002/ING010",
+            _kw(source={**package_kwargs()["source"], "file_version": "v", "file_date": "\n"}),
+            "blank file_version or file_date",
+            id="blank-file-date",
+        ),
     ],
 )
 def test_the_writer_refuses_what_the_atlas_refuses(

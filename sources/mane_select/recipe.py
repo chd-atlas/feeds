@@ -100,10 +100,10 @@ PINNED_SHA256: dict[str, str] = {
     PROTEIN: "b12307f98481b6d8c4e17d9ecd1856ee1f64a63db6507ff7529f669e26f6f372",
     GENOME_NAME: "11912a45a545bf01a10b2a7f10eb7a42924436b4d19b476b1899834fb7ba74a3",
 }
-# The source's `version`: the release as its README_versions.txt names it, read
-# 2026-11-17. Not a `file_version`, which the atlas pairs with a `file_date` and reads as
-# what a mirrored file states about itself, verbatim; README_versions.txt is not one of the
-# five inputs and states no date.
+# The source's `version`: the release, composed from its README_versions.txt (read
+# 2026-11-17), not transcribed. Not a `file_version`, which the atlas pairs with a
+# `file_date` and reads as what a mirrored file states about itself, verbatim;
+# README_versions.txt is not one of the five inputs and states no date.
 RELEASE: Final = (
     "MANE v1.5 (NCBI RefSeq Annotation Release GCF_000001405.40-RS_2025_08, Ensembl 116)"
 )
