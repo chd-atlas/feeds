@@ -243,6 +243,18 @@ def _kw(tables: list[TableOut] | None = None, **over: object) -> dict[str, objec
             "belongs to source 'gencc'",
             id="gencc-table-from-demo",
         ),
+        pytest.param(
+            "SRC002/ING010",
+            _kw(source={**package_kwargs()["source"], "file_version": "1.0"}),
+            "one of file_version and file_date",
+            id="file-version-without-its-date",
+        ),
+        pytest.param(
+            "SRC002/ING010",
+            _kw(source={**package_kwargs()["source"], "file_date": "2026-01-01"}),
+            "one of file_version and file_date",
+            id="file-date-without-its-version",
+        ),
     ],
 )
 def test_the_writer_refuses_what_the_atlas_refuses(

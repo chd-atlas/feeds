@@ -666,7 +666,10 @@ def test_the_package_states_its_inputs_and_orders_rows_by_gene_then_exon(
     assert names == [recipe.SUMMARY, recipe.GTF, recipe.RNA, recipe.PROTEIN, recipe.GENOME_NAME]
     assert {i["retrieved_on"] for i in manifest["inputs"]} == {"2026-11-17"}
     assert manifest["inputs"][0]["url"].endswith("release_1.5/" + recipe.SUMMARY)
-    assert manifest["source"]["version"] == "MANE v1.5"
+    assert manifest["source"]["version"] == (
+        "MANE v1.5 (NCBI RefSeq Annotation Release GCF_000001405.40-RS_2025_08, Ensembl 116)"
+    )
+    assert "file_version" not in manifest["source"]
     raw = gzip.decompress((out / "mane_transcripts.tsv.gz").read_bytes()).decode()
     lines = [line.split("\t") for line in raw.splitlines()]
     assert lines[0] == list(recipe.TRANSCRIPT_COLUMNS)

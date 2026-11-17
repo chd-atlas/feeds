@@ -105,6 +105,12 @@ def write_package(
         raise PackageRefused(f"{out_dir} exists and is not empty; never mix two packages")
     if not licence_evidence.strip():
         raise PackageRefused("licence_evidence must not be blank")
+    # The atlas's SRC002: a file's own version and the date it states, both or neither.
+    if (source.get("file_version") is None) != (source.get("file_date") is None):
+        raise PackageRefused(
+            "source gives one of file_version and file_date; the atlas refuses one without "
+            "the other (SRC002)"
+        )
     names = [t.name for t in tables]
     # The atlas's ING009: `genes` is the registry, and only the hgnc package ships it.
     if package != HGNC and "genes" in names:
