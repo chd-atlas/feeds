@@ -17,7 +17,8 @@ Three sources use hvantk's ``drift`` probe, read-only, through its ``--json`` ou
 ``orphadata_probe``, which reads the ``<JDBOR>`` version and date from the first 4 KB;
 Expression Atlas E-MTAB-6814 is fingerprinted by streaming the package's own two input
 files (``files_probe``: sha256 and size), because hvantk's probe fingerprints the whole
-Atlas catalogue and fires whenever any experiment is updated.
+Atlas catalogue and fires whenever any experiment is updated. MANE Select is fingerprinted
+the same way, from its release's ``README_versions.txt`` read at ``current/``.
 hvantk's own verdict, ``expected`` and ``diff`` are ignored: its ``expected`` is a
 fingerprint packaged inside hvantk, not this repository's baseline.
 """
@@ -87,6 +88,16 @@ SOURCES: dict[str, Source] = {
             "E-MTAB-6814-configuration.xml": _ATLAS + "E-MTAB-6814-configuration.xml",
         },
         "expression_atlas_e_mtab_6814/92484a97",
+    ),
+    # The release's README_versions.txt names the MANE, RefSeq and Ensembl releases the
+    # package was built from; it is read at `current/`, so a new release changes it.
+    "mane_select": FilesSource(
+        {
+            "README_versions.txt": (
+                "https://ftp.ncbi.nlm.nih.gov/refseq/MANE/MANE_human/current/README_versions.txt"
+            )
+        },
+        "mane_select/1.5",
     ),
     "orphanet_product4": OrphadataSource(
         "https://www.orphadata.com/data/xml/en_product4.xml", "orphanet_product4/4f44e8a6"

@@ -85,6 +85,10 @@ that could not run is never reported as clean.
   whenever any experiment is updated.
 - Orphanet products 1 and 4 use `orphadata_probe`: the `<JDBOR>` version and date from
   the first 4 KB of the file.
+- MANE Select (`mane_select`) streams the release's `README_versions.txt` from the `current/`
+  directory (the MANE, RefSeq and Ensembl release numbers; sha256 and size). It
+  changes when NCBI publishes a newer release, which the weekly job reports at its next Monday
+  run; it does not read the pinned `release_1.5` files.
 - Mondo has no probe: it is pinned to a dated release URL, which cannot change.
 - `audain2021_s6` and `audain2026_sd3` have no probe: they are fixed supplement files.
 
@@ -99,7 +103,7 @@ workstation's date), 2.5 minutes after the download their packages (`clingen/202
 workstation's. To refresh a baseline after deciding what to rebuild, set the source's
 package in `SOURCES` (`scripts/drift.py`) to the one now pinned, run
 `scripts/drift.py --capture` (it writes nothing unless every probe answered, and it
-rewrites all six), then restore from git every baseline you did not mean to move.
+rewrites all seven), then restore from git every baseline you did not mean to move.
 
 ## Making a release
 
