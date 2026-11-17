@@ -1,0 +1,19 @@
+name: >-
+  MANE (Matched Annotation from NCBI and EMBL-EBI) v1.5, MANE Select
+  transcripts (summary, GTF, RNA and protein FASTA) with the GRCh38.p14
+  genome (GCF_000001405.40) that the exon windows are cut from
+url: https://ftp.ncbi.nlm.nih.gov/refseq/MANE/MANE_human/release_1.5/
+licence: NCBI data policy, no restrictions asserted
+redistribution: permitted_with_attribution
+# Quoted from https://www.ncbi.nlm.nih.gov/home/about/policies/ (read 2026-11-17).
+# MANE's README (https://ftp.ncbi.nlm.nih.gov/refseq/MANE/README.txt, read the same day)
+# states no licence or citation terms, so none is recorded for it. Attribution is the
+# atlas's own choice, because NCBI cannot vouch for the claims the policy names.
+licence_evidence: >-
+  NCBI's data policy (https://www.ncbi.nlm.nih.gov/home/about/policies/) says
+  "NCBI itself places no restrictions on the use or distribution of the data
+  contained therein", and also that "some submitters of the original data (or
+  the country of origin of such data) may claim patent, copyright or other
+  intellectual property rights in all or a portion of the data" and that NCBI
+  "is not in a position to assess the validity of such claims". MANE's own
+  README states no licence terms.

@@ -447,3 +447,22 @@ def test_a_truncated_or_partial_download_is_not_fingerprinted(
         serve(bad)
         with pytest.raises(OSError):
             drift.http_stream("u")
+
+
+def test_the_mane_select_baseline_is_the_current_release_readme() -> None:
+    """The probe reads `current/README_versions.txt`; the baseline is the release-1.5 bytes."""
+    from sources.mane_select import recipe
+
+    spec = drift.SOURCES["mane_select"]
+    assert isinstance(spec, drift.FilesSource)
+    assert spec.package == f"mane_select/{recipe.UPSTREAM_RELEASE}"
+    assert spec.urls == {
+        "README_versions.txt": (
+            "https://ftp.ncbi.nlm.nih.gov/refseq/MANE/MANE_human/current/README_versions.txt"
+        )
+    }
+    baseline = json.loads(
+        (_PATH.parent.parent / "sources" / recipe.SOURCE / "drift.json").read_text()
+    )
+    assert set(baseline["fingerprint"]) == {"README_versions.txt"}
+    assert baseline["package"] == spec.package

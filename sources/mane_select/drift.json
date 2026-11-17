@@ -1,0 +1,10 @@
+{
+  "captured_on": "2026-11-17",
+  "fingerprint": {
+    "README_versions.txt": {
+      "sha256": "2c9c872e8d1669e4989a0bc97220137e30fcdcd6fb1ea5cda8cde58665d1b3e7",
+      "size": 96
+    }
+  },
+  "package": "mane_select/1.5"
+}

@@ -88,6 +88,16 @@ SOURCES: dict[str, Source] = {
         },
         "expression_atlas_e_mtab_6814/92484a97",
     ),
+    # The release's README_versions.txt names the MANE, RefSeq and Ensembl releases the
+    # package was built from; it is read at `current/`, so a new release changes it.
+    "mane_select": FilesSource(
+        {
+            "README_versions.txt": (
+                "https://ftp.ncbi.nlm.nih.gov/refseq/MANE/MANE_human/current/README_versions.txt"
+            )
+        },
+        "mane_select/1.5",
+    ),
     "orphanet_product4": OrphadataSource(
         "https://www.orphadata.com/data/xml/en_product4.xml", "orphanet_product4/4f44e8a6"
     ),
