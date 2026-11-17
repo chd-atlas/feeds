@@ -297,17 +297,18 @@ def test_an_ambiguity_code_in_a_flank_becomes_n_and_in_an_exon_core_drops_the_tr
     ok = world.add(Gene("HGNC:1", "NM_000001.1", "MKTAR", starts=(300,)))
     bad = world.add(Gene("HGNC:2", "NM_000002.1", "MKTAR", starts=(900,)))
     (s1, e1), (s2, _) = world.spans(ok)[0], world.spans(bad)[0]
-    r_at, n_at = s1 - 3, e1 + 4  # 1-based positions, both in the flanks
+    r_at, n_at, k_at = s1 - 3, e1 + 4, e1 + 6  # 1-based positions, all in the flanks
     world.chrom["NC_000012.12"][r_at - 1] = "R"
+    world.chrom["NC_000012.12"][k_at - 1] = "K"  # one in each flank: both are rewritten
     world.chrom["NC_000012.12"][n_at - 1] = "n"  # an N already there: counted separately
     world.chrom["NC_000012.12"][s2 + 1] = "Y"  # the third base of the second gene's core
     built = rows(world)
     assert [t[0] for t in built.transcripts] == ["HGNC:1"]
     (exon,) = built.exons
     window, w_start = exon[9], int(exon[7])
-    assert window[r_at - w_start] == "N" and window[n_at - w_start] == "N"
+    assert {window[p - w_start] for p in (r_at, n_at, k_at)} == {"N"}
     assert set(window) <= set("ACGTN")
-    assert (built.flank_iupac, built.flank_n) == (1, 1)
+    assert (built.flank_iupac, built.flank_n) == (2, 1)
     assert built.dropped == [
         {
             "reason": "MAN001: the exon cores do not reproduce the RNA sequence",
