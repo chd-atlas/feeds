@@ -64,6 +64,7 @@ class Gene:
     ens_nuc: str | None = None  # the summary's Ensembl transcript, when not well-formed by default
     gtf_chrom: str | None = None  # the GTF seqname (without "chr"), when not the summary's
     gtf_strand: str | None = None
+    gtf_cds: bool = True  # False writes the exons without their CDS lines
 
     @property
     def cds(self) -> str:
@@ -158,7 +159,7 @@ class World:
                 t0, t1 = at, at + end - start
                 at = t1 + 1
                 a, b = max(lo, t0), min(hi, t1)
-                if a > b:
+                if a > b or not g.gtf_cds:
                     continue
                 if g.strand == "+":
                     cs, ce = start + a - t0, start + b - t0
@@ -455,6 +456,19 @@ def _case_core_n(world: World, n: int) -> None:
     world.chrom["NC_000012.12"][world.spans(gene)[0][0] + 1] = "N"
 
 
+def _case_no_cds(world: World, n: int) -> None:
+    world.add(_bad(n, gtf_cds=False))
+
+
+def _case_cds_outside_exons(world: World, n: int) -> None:
+    gene = _bad(n)
+    at = gene.starts[0] + len(gene.transcript) + 50  # past the end of its one exon
+    chrom = recipe._PRIMARY[gene.nc.split(".")[0]]
+    attrs = f'transcript_id "{gene.nuc}"; tag "MANE Select";'
+    gene.extra_gtf.append(f"chr{chrom}\tBestRefSeq\tCDS\t{at}\t{at + 2}\t.\t+\t0\t{attrs}")
+    world.add(gene)
+
+
 def _case_odd_accession(world: World, n: int) -> None:
     gene = _bad(n, starts=())
     gene.nuc = f"XM_{n + 2:06d}.1"
@@ -489,6 +503,8 @@ _DROPS = [
     (_case_gtf_wrong_chromosome, _NO_EXON, "HGNC:2 NM_000002.1"),
     (_case_gtf_wrong_strand, _NO_EXON, "HGNC:2 NM_000002.1"),
     (_case_no_exons, _NO_EXON, "HGNC:2 NM_000002.1"),
+    (_case_no_cds, "no CDS in the GTF", "HGNC:2 NM_000002.1"),
+    (_case_cds_outside_exons, "a CDS base lies outside the exons", "HGNC:2 NM_000002.1"),
     (
         _case_core_n,
         "MAN001: the exon cores do not reproduce the RNA sequence",
