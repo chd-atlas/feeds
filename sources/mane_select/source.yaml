@@ -3,17 +3,24 @@ name: >-
   transcripts (summary, GTF, RNA and protein FASTA) with the GRCh38.p14
   genome (GCF_000001405.40) that the exon windows are cut from
 url: https://ftp.ncbi.nlm.nih.gov/refseq/MANE/MANE_human/release_1.5/
-licence: NCBI data policy, no restrictions asserted
+licence: NCBI data policy, no NCBI restrictions; submitters may claim rights
 redistribution: permitted_with_attribution
-# Quoted from https://www.ncbi.nlm.nih.gov/home/about/policies/ (read 2026-11-17).
-# MANE's README (https://ftp.ncbi.nlm.nih.gov/refseq/MANE/README.txt, read the same day)
-# states no licence or citation terms, so none is recorded for it. Attribution is the
-# atlas's own choice, because NCBI cannot vouch for the claims the policy names.
+# Quoted verbatim from https://www.ncbi.nlm.nih.gov/home/about/policies/, re-read on
+# 2026-11-17 (the page text was fetched with curl and the three sentences found by search).
+# NCBI places no restrictions of its own, but says it cannot give unrestricted permission
+# because submitters may claim rights, so the atlas records attribution as the conservative
+# reading (as for the EMBL-EBI entry). MANE's README
+# (https://ftp.ncbi.nlm.nih.gov/refseq/MANE/README.txt) states no licence terms, so none is
+# recorded for it.
 licence_evidence: >-
   NCBI's data policy (https://www.ncbi.nlm.nih.gov/home/about/policies/) says
   "NCBI itself places no restrictions on the use or distribution of the data
-  contained therein", and also that "some submitters of the original data (or
-  the country of origin of such data) may claim patent, copyright or other
-  intellectual property rights in all or a portion of the data" and that NCBI
-  "is not in a position to assess the validity of such claims". MANE's own
-  README states no licence terms.
+  contained therein." and "However, some submitters of the original data (or
+  the country of origin of such data) may claim patent, copyright, or other
+  intellectual property rights in all or a portion of the data (that has been
+  submitted). NCBI is not in a position to assess the validity of such claims
+  and since there is no transfer of rights from submitters to NCBI, NCBI has no
+  rights to transfer to a third party. Therefore, NCBI cannot provide comment
+  or unrestricted permission concerning the use, copying, or distribution of
+  the information contained in the molecular databases." MANE's own README
+  states no licence terms.

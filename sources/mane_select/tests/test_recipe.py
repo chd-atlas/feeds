@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import random
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -58,6 +59,11 @@ class Gene:
     coding: str | None = None  # codons written into the transcript, when not the protein's
     status: str = "MANE Select"
     extra_gtf: list[str] = field(default_factory=list)
+    in_rna: bool = True
+    in_protein: bool = True
+    ens_nuc: str | None = None  # the summary's Ensembl transcript, when not well-formed by default
+    gtf_chrom: str | None = None  # the GTF seqname (without "chr"), when not the summary's
+    gtf_strand: str | None = None
 
     @property
     def cds(self) -> str:
@@ -85,6 +91,7 @@ class World:
         self.chrom: dict[str, list[str]] = {}
         self.rng = rng
         self.genes: list[Gene] = []
+        self.omit_from_genome: set[str] = set()
         self.add_chrom("NC_000012.12")
 
     def add_chrom(self, nc: str, length: int | None = None) -> None:
@@ -128,20 +135,22 @@ class World:
             summary.append(
                 f"GeneID:{n}\tENSG{num}.1\t{g.hgnc}\tG{n}\tname\t{g.nuc}"
                 f"\t{g.nuc.replace('NM', 'NP')}"
-                f"\tENST{num}.1\tENSP{num}.1\t{g.status}\t{g.nc}\t1\t2\t{g.strand}"
+                f"\t{g.ens_nuc or f'ENST{num}.1'}\tENSP{num}.1\t{g.status}\t{g.nc}\t1\t2"
+                f"\t{g.strand}"
             )
-            rna += [f">{g.nuc} Homo sapiens test, mRNA", g.transcript]
-            prot += [f">{g.nuc.replace('NM', 'NP')} test protein", g.protein]
+            if g.in_rna:
+                rna += [f">{g.nuc} Homo sapiens test, mRNA", g.transcript]
+            if g.in_protein:
+                prot += [f">{g.nuc.replace('NM', 'NP')} test protein", g.protein]
             if not g.starts:
                 continue
-            chrom = recipe._PRIMARY[g.nc.split(".")[0]]
+            chrom = g.gtf_chrom or recipe._PRIMARY[g.nc.split(".")[0]]
+            strand = g.gtf_strand or g.strand
             tag = f'tag "{g.status}";'
             attrs = f'gene_id "G{n}"; transcript_id "{g.nuc}"; {tag}'
             spans = self.spans(g)
             for start, end in spans:
-                gtf.append(
-                    f"chr{chrom}\tBestRefSeq\texon\t{start}\t{end}\t.\t{g.strand}\t.\t{attrs}"
-                )
+                gtf.append(f"chr{chrom}\tBestRefSeq\texon\t{start}\t{end}\t.\t{strand}\t.\t{attrs}")
             lo = len(g.utr5) + 1  # first CDS base, in the transcript
             hi = len(g.utr5) + len(g.cds) - 3  # last CDS base: the stop codon is not CDS
             at = 1
@@ -155,10 +164,12 @@ class World:
                     cs, ce = start + a - t0, start + b - t0
                 else:
                     cs, ce = end - (b - t0), end - (a - t0)
-                gtf.append(f"chr{chrom}\tBestRefSeq\tCDS\t{cs}\t{ce}\t.\t{g.strand}\t0\t{attrs}")
+                gtf.append(f"chr{chrom}\tBestRefSeq\tCDS\t{cs}\t{ce}\t.\t{strand}\t0\t{attrs}")
             gtf += g.extra_gtf
         genome = []
         for nc, bases in self.chrom.items():
+            if nc in self.omit_from_genome:
+                continue
             genome.append(f">{nc} Homo sapiens chromosome, GRCh38.p14 Primary Assembly")
             text = "".join(bases)
             genome += [text[i : i + 60] for i in range(0, len(text), 60)]
@@ -349,7 +360,7 @@ def test_a_non_primary_accession_is_listed_and_does_not_count_toward_the_ceiling
     assert [t[0] for t in built.transcripts] == ["HGNC:1"]
     (entry,) = built.dropped
     assert entry["count"] == recipe.MAX_FAILURES + 3
-    assert entry["reason"].startswith("MANE Select transcript placed on a non-primary accession")
+    assert entry["reason"].startswith("MANE Select transcript placed only on an alternate-locus")
     assert entry["examples"][0] == "HGNC:10 NM_000010.1 on NT_187633.1"
     assert built.rows_read == recipe.MAX_FAILURES + 4
 
@@ -397,6 +408,194 @@ def test_more_than_fifty_failures_refuse_and_fifty_do_not(tmp_path: Path) -> Non
     _failing(over, recipe.MAX_FAILURES + 1)
     with pytest.raises(PackageRefused, match="more than 50"):
         rows(over)
+
+
+def _good(world: World) -> None:
+    world.add(Gene("HGNC:1", "NM_000001.1", "MKTAR", starts=(300,)))
+
+
+def _bad(n: int, **kw: object) -> Gene:
+    """The n-th misbehaving gene: its own id, accession and place on the chromosome."""
+    fields: dict[str, object] = {"starts": (1000 + 150 * n,)}
+    fields.update(kw)
+    return Gene(f"HGNC:{n + 2}", f"NM_{n + 2:06d}.1", "MKTAR", **fields)  # type: ignore[arg-type]
+
+
+def _case_chrom_absent(world: World, n: int) -> None:
+    world.add(_bad(n, nc="NC_000013.11"))
+    world.omit_from_genome.add("NC_000013.11")
+
+
+def _case_no_rna(world: World, n: int) -> None:
+    world.add(_bad(n, in_rna=False))
+
+
+def _case_no_protein(world: World, n: int) -> None:
+    world.add(_bad(n, in_protein=False))
+
+
+def _case_bad_ensembl(world: World, n: int) -> None:
+    world.add(_bad(n, ens_nuc="ENST1.1"))
+
+
+def _case_gtf_wrong_chromosome(world: World, n: int) -> None:
+    world.add(_bad(n, gtf_chrom="13"))
+
+
+def _case_gtf_wrong_strand(world: World, n: int) -> None:
+    world.add(_bad(n, gtf_strand="-"))
+
+
+def _case_no_exons(world: World, n: int) -> None:
+    world.add(_bad(n, starts=()))
+
+
+def _case_core_n(world: World, n: int) -> None:
+    gene = world.add(_bad(n))
+    world.chrom["NC_000012.12"][world.spans(gene)[0][0] + 1] = "N"
+
+
+def _case_odd_accession(world: World, n: int) -> None:
+    gene = _bad(n, starts=())
+    gene.nuc = f"XM_{n + 2:06d}.1"
+    world.add(gene)
+
+
+def _case_odd_hgnc(world: World, n: int) -> None:
+    gene = _bad(n, starts=())
+    gene.hgnc = "HGNC:x"
+    world.add(gene)
+
+
+def _case_odd_chromosome(world: World, n: int) -> None:
+    world.add(_bad(n, starts=(), nc="12"))
+
+
+_NO_EXON = "no exon in the GTF on the summary's chromosome and strand"
+# (case, reason, example for the first bad gene: HGNC:2, NM_000002.1)
+_DROPS = [
+    (
+        _case_chrom_absent,
+        "chromosome NC_000013.11 is not in the genome FASTA",
+        "HGNC:2 NM_000002.1",
+    ),
+    (_case_no_rna, "no RNA sequence in the MANE FASTA", "HGNC:2 NM_000002.1"),
+    (_case_no_protein, "no protein sequence in the MANE FASTA", "HGNC:2 NM_000002.1"),
+    (
+        _case_bad_ensembl,
+        "ensembl_transcript does not fit the table's pattern",
+        "HGNC:2 NM_000002.1",
+    ),
+    (_case_gtf_wrong_chromosome, _NO_EXON, "HGNC:2 NM_000002.1"),
+    (_case_gtf_wrong_strand, _NO_EXON, "HGNC:2 NM_000002.1"),
+    (_case_no_exons, _NO_EXON, "HGNC:2 NM_000002.1"),
+    (
+        _case_core_n,
+        "MAN001: the exon cores do not reproduce the RNA sequence",
+        "HGNC:2 NM_000002.1: an exon core holds a base other than A, C, G or T",
+    ),
+    (
+        _case_odd_accession,
+        "MANE Select transcript that is neither NM_ nor NR_",
+        "HGNC:2 XM_000002.1",
+    ),
+    (
+        _case_odd_hgnc,
+        "MANE Select transcript whose HGNC id is not HGNC:<digits>",
+        "NM_000002.1 (HGNC:x)",
+    ),
+    (
+        _case_odd_chromosome,
+        "MANE Select transcript on an unrecognised chromosome accession",
+        "HGNC:2 NM_000002.1 on 12",
+    ),
+]
+_IDS = [c[0].__name__.removeprefix("_case_") for c in _DROPS]
+
+
+@pytest.mark.parametrize(("case", "reason", "example"), _DROPS, ids=_IDS)
+def test_a_transcript_that_cannot_be_framed_is_dropped_alone_with_its_exact_reason(
+    tmp_path: Path, case: object, reason: str, example: str
+) -> None:
+    """One bad transcript beside a good one: it is listed (never refused) and the other stays."""
+    world = World(tmp_path, length=20000)
+    _good(world)
+    case(world, 0)  # type: ignore[operator]
+    built = rows(world)
+    assert [t[0] for t in built.transcripts] == ["HGNC:1"]
+    assert built.dropped == [{"reason": reason, "count": 1, "examples": [example]}]
+
+
+@pytest.mark.parametrize("case", [c[0] for c in _DROPS], ids=_IDS)
+def test_every_such_drop_counts_toward_the_fifty_failure_ceiling(
+    tmp_path: Path, case: object
+) -> None:
+    """51 of one kind refuse; 50 do not. Only the by-design exclusions are exempt."""
+    for count in (recipe.MAX_FAILURES, recipe.MAX_FAILURES + 1):
+        sub = tmp_path / str(count)
+        sub.mkdir()
+        world = World(sub, length=20000)
+        _good(world)
+        for n in range(count):
+            case(world, n)  # type: ignore[operator]
+        if count > recipe.MAX_FAILURES:
+            with pytest.raises(PackageRefused, match="more than 50"):
+                rows(world)
+        else:
+            assert rows(world).dropped[0]["count"] == count
+
+
+def _edit_summary(world: World, edit: Callable[[list[str]], list[str]]) -> dict[str, Path]:
+    files = world.write()
+    path = files[recipe.SUMMARY]
+    lines = gzip.decompress(path.read_bytes()).decode().splitlines()
+    path.write_bytes(gzip.compress(("\n".join(edit(lines)) + "\n").encode(), mtime=0))
+    return files
+
+
+def _read_files(files: dict[str, Path]) -> recipe.Built:
+    return recipe.read_rows(
+        files[recipe.SUMMARY],
+        files[recipe.GTF],
+        files[recipe.RNA],
+        files[recipe.PROTEIN],
+        files[recipe.GENOME_NAME],
+    )
+
+
+def test_a_duplicate_hgnc_row_is_refused(tmp_path: Path) -> None:
+    world = World(tmp_path)
+    _good(world)
+    files = _edit_summary(world, lambda lines: [*lines, lines[-1]])
+    with pytest.raises(PackageRefused, match="HGNC:1 has more than one MANE Select row"):
+        _read_files(files)
+
+
+def test_a_summary_without_a_needed_column_is_refused(tmp_path: Path) -> None:
+    world = World(tmp_path)
+    _good(world)
+    files = _edit_summary(
+        world, lambda lines: [lines[0].replace("chr_strand", "strand"), *lines[1:]]
+    )
+    with pytest.raises(PackageRefused, match="no column chr_strand"):
+        _read_files(files)
+
+
+def test_a_short_summary_row_is_a_counted_failure_not_a_silent_skip(tmp_path: Path) -> None:
+    world = World(tmp_path)
+    _good(world)
+    files = _edit_summary(world, lambda lines: [*lines, "GeneID:9\tENSG1\tHGNC:9"])
+    built = _read_files(files)
+    assert built.dropped == [
+        {
+            "reason": "summary row with too few cells to read its MANE status",
+            "count": 1,
+            "examples": ["line 3 (3 cells)"],
+        }
+    ]
+    many = _edit_summary(world, lambda lines: [*lines, *["GeneID:9\tENSG1\tHGNC:9"] * 51])
+    with pytest.raises(PackageRefused, match="more than 50"):
+        _read_files(many)
 
 
 @pytest.fixture
@@ -467,6 +666,39 @@ def test_the_package_states_its_inputs_and_orders_rows_by_gene_then_exon(
     ]
 
 
+def test_a_later_revision_reads_r2_and_the_genome_names_its_assembly(
+    tmp_path: Path, pinned: object, capsys: pytest.CaptureFixture[str]
+) -> None:
+    world = _two_genes(tmp_path)
+    world.chrom["NC_000012.12"][299 - 5] = "R"  # one flank IUPAC code for the operator's line
+    files = world.write()
+    pinned(files)  # type: ignore[operator]
+    out = recipe.build(
+        files[recipe.SUMMARY],
+        files[recipe.GTF],
+        files[recipe.RNA],
+        files[recipe.PROTEIN],
+        files[recipe.GENOME_NAME],
+        retrieved_on=date(2026, 11, 17),
+        revision=2,
+        built_by=BUILT_BY,
+        out=tmp_path / "pkg",
+        commit_of=lambda: RECIPE_COMMIT,
+    )
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["version"] == "1.5-r2"
+    releases = {i["name"]: i["upstream_release"] for i in manifest["inputs"]}
+    assert releases == {
+        recipe.SUMMARY: "1.5",
+        recipe.GTF: "1.5",
+        recipe.RNA: "1.5",
+        recipe.PROTEIN: "1.5",
+        recipe.GENOME_NAME: "GCF_000001405.40 (GRCh38.p14)",
+    }
+    printed = capsys.readouterr().out
+    assert "2 transcripts, 3 exons; 0 flank bases already N, 1 flank IUPAC codes" in printed
+
+
 def test_other_bytes_are_refused_and_nothing_is_written(tmp_path: Path) -> None:
     files = _two_genes(tmp_path).write()
     with pytest.raises(PackageRefused, match="not the pinned"):
@@ -511,7 +743,14 @@ def test_the_real_v1_5_files_build_when_present(tmp_path: Path) -> None:
     dropped = sum(d["count"] for d in built.dropped)
     assert built.rows_read == 19363
     assert len(built.transcripts) == 19363 - dropped == 19179
-    assert {d["count"] for d in built.dropped} == {1, 61, 52, 70}
+    assert {d["reason"]: d["count"] for d in built.dropped} == {
+        "MAN002: the coding sequence does not translate to the protein": 1,
+        "MANE Select non-coding transcript (NR_), which has no protein to frame": 70,
+        "MANE Select transcript of a gene with no HGNC id (the table is keyed by HGNC id)": 52,
+        recipe._NON_PRIMARY_REASON: 61,
+    }
+    assert len(built.exons) == 201933
+    assert (built.flank_n, built.flank_iupac) == (1, 0)
     by_gene = {t[0]: t for t in built.transcripts}
     cols = recipe.TRANSCRIPT_COLUMNS
     tbx5 = next(
@@ -523,4 +762,37 @@ def test_the_real_v1_5_files_build_when_present(tmp_path: Path) -> None:
         t for t in by_gene.values() if column(t, "refseq_transcript", cols) == "NM_021005.4"
     )
     assert column(nr2f2, "cds_start", cols) == "1407"
-    assert json.dumps(built.dropped)  # serialisable
+    _codon_features_give_the_same_bounds(local / recipe.GTF, built)
+
+
+def _codon_features_give_the_same_bounds(gtf: Path, built: recipe.Built) -> None:
+    """Re-derive every kept transcript's bounds from start/stop_codon, joining split ones."""
+    exons: dict[str, list[tuple[int, int, int, int]]] = {}
+    for e in built.exons:
+        exons.setdefault(e[1], []).append((int(e[5]), int(e[6]), int(e[3]), int(e[4])))
+    strand = {t[1]: t[6] for t in built.transcripts}
+    bounds = {t[1]: (int(t[7]), int(t[8])) for t in built.transcripts}
+    found: dict[str, dict[str, list[int]]] = {}
+    with gzip.open(gtf, "rt") as handle:
+        for line in handle:
+            cols = line.split("\t")
+            if len(cols) < 9 or cols[2] not in ("start_codon", "stop_codon"):
+                continue
+            if 'tag "MANE Select";' not in cols[8]:
+                continue
+            name = cols[8].split('transcript_id "', 1)[1].split('"', 1)[0]
+            if name in bounds:
+                found.setdefault(name, {}).setdefault(cols[2], []).extend(
+                    [int(cols[3]), int(cols[4])]
+                )
+
+    def at(name: str, pos: int) -> int:
+        for g_start, g_end, t_start, _ in exons[name]:
+            if g_start <= pos <= g_end:
+                return t_start + (g_end - pos if strand[name] == "-" else pos - g_start)
+        raise AssertionError(f"{name}: {pos} is in no exon")
+
+    for name, (cds_start, cds_end) in bounds.items():
+        start, stop = found[name]["start_codon"], found[name]["stop_codon"]
+        first, last = (min(start), max(stop)) if strand[name] == "+" else (max(start), min(stop))
+        assert (at(name, first), at(name, last)) == (cds_start, cds_end), name

@@ -18,18 +18,27 @@ CODING BOUNDS
 -------------
 ``cds_start`` is the transcript position of the first ``CDS`` base and ``cds_end`` that of
 the last ``CDS`` base plus 3, because the GTF's ``CDS`` feature excludes the stop codon.
-``start_codon`` and ``stop_codon`` features are not used: they are not one per transcript
-(a codon split by an intron, or absent), whereas every coding transcript has CDS. MAN002
-then confirms the three bases after the CDS really are a stop.
+``start_codon`` and ``stop_codon`` features are not used. Measured in v1.5: all 19,291
+coding MANE Select transcripts in the GTF have both, but 33 starts and 20 stops are split
+across exons (two features each), which would need joining; the CDS needs no such case.
+On the 19,179 kept transcripts the two methods give identical bounds (README). MAN002 then
+confirms the three bases after the CDS really are a stop.
 
 WHAT IS DROPPED, AND WHY
 ------------------------
 * A MANE Select transcript that is non-coding (an ``NR_`` accession): it has no protein.
-* A MANE Select transcript of a gene with no HGNC id (``LOC...`` genes): the package is
-  keyed by HGNC id, and the atlas's gene registry is.
-* A MANE Select transcript the summary places on a non-primary accession (``NT_``,
-  ``NW_``): the atlas's chromosome vocabulary is 1-22, X, Y, MT, and a position on an
-  unlocalised scaffold would be a guess.
+* A MANE Select transcript of a gene with a blank HGNC id (the table is keyed by HGNC id,
+  and the atlas's gene registry is). Measured in v1.5: 52 rows, 50 ``LOC...`` genes plus
+  TARP and MIURF.
+* A MANE Select transcript the summary places on an ``NT_``/``NW_`` accession. Measured in
+  v1.5: 61 rows, and every GTF seqname they use is an ``*_alt`` (27) or ``*_fix`` (32)
+  scaffold (2 of the 61 have no MANE Select feature in the GTF), none a ``_random`` or
+  ``chrUn_``. The positions are exact; they are not on the primary assembly, whose
+  1-22, X, Y, MT is the atlas's chromosome vocabulary (for a fix patch, the primary
+  sequence there is the one known to be wrong). SHANK3, POLR2A, ABO and ORAI1 are among them.
+* Anything else unexpected in the summary (an accession that is neither ``NM_`` nor
+  ``NR_``, a malformed HGNC id or chromosome accession, a short row) is a failure, not an
+  exclusion.
 * A transcript whose exon cores do not reproduce its RNA sequence (MAN001) or whose
   coding sequence does not translate to its protein (MAN002). MAN002 allows ``U``
   against ``TGA`` (selenocysteine) and ``M`` at residue 1 against a non-ATG start,
@@ -151,6 +160,12 @@ CODON_TABLE: Final[dict[str, str]] = {
 _COMPLEMENT = str.maketrans("ACGTN", "TGCAN")
 _NOT_BASE = re.compile(r"[^ACGTN]")
 _EXAMPLES = 5
+_NON_PRIMARY = re.compile(r"N[TW]_")
+_NON_PRIMARY_REASON: Final = (
+    "MANE Select transcript placed only on an alternate-locus or fix-patch scaffold "
+    "(NT_/NW_ accession); the atlas's chromosome vocabulary is the primary assembly's "
+    "1-22, X, Y, MT"
+)
 _FAULT_REASON: Final = {
     "MAN001": "MAN001: the exon cores do not reproduce the RNA sequence",
     "MAN002": "MAN002: the coding sequence does not translate to the protein",
@@ -238,26 +253,44 @@ def _summary(path: Path, dropped: _Dropped) -> tuple[list[_Tx], int]:
     txs: list[_Tx] = []
     read = 0
     seen: set[str] = set()
-    for line in lines:
+    for number, line in enumerate(lines, start=2):
+        if not line:
+            continue
         cells = line.split("\t")
-        if not line or len(cells) <= max(at.values()) or cells[at["MANE_status"]] != "MANE Select":
+        if len(cells) <= max(at.values()):
+            dropped.add(
+                "summary row with too few cells to read its MANE status",
+                f"line {number} ({len(cells)} cells)",
+            )
+            continue
+        if cells[at["MANE_status"]] != "MANE Select":
             continue
         read += 1
         hgnc = cells[at["HGNC_ID"]]
         nc = cells[at["GRCh38_chr"]]
         nuc = cells[at["RefSeq_nuc"]]
-        if not nuc.startswith("NM_"):
+        # By design only: an NR_ accession, a blank HGNC cell, an NT_/NW_ accession. Anything
+        # else unexpected is a failure, so a format change cannot hide in an uncounted bucket.
+        if nuc.startswith("NR_"):
             dropped.add(
                 "MANE Select non-coding transcript (NR_), which has no protein to frame",
                 f"{hgnc or 'no HGNC id'} {nuc}",
                 failure=False,
             )
             continue
-        if not _PATTERNS["hgnc_id"].fullmatch(hgnc):
+        if not nuc.startswith("NM_"):
+            dropped.add("MANE Select transcript that is neither NM_ nor NR_", f"{hgnc} {nuc}")
+            continue
+        if hgnc == "":
             dropped.add(
                 "MANE Select transcript of a gene with no HGNC id (the table is keyed by HGNC id)",
-                f"{nuc} ({cells[at['HGNC_ID']] or 'blank'})",
+                f"{nuc} (blank)",
                 failure=False,
+            )
+            continue
+        if not _PATTERNS["hgnc_id"].fullmatch(hgnc):
+            dropped.add(
+                "MANE Select transcript whose HGNC id is not HGNC:<digits>", f"{nuc} ({hgnc})"
             )
             continue
         if hgnc in seen:
@@ -265,11 +298,13 @@ def _summary(path: Path, dropped: _Dropped) -> tuple[list[_Tx], int]:
         seen.add(hgnc)
         chrom = _PRIMARY.get(nc.split(".")[0])
         if chrom is None:
+            by_design = _NON_PRIMARY.match(nc) is not None
             dropped.add(
-                "MANE Select transcript placed on a non-primary accession "
-                "(the atlas's chromosome vocabulary is 1-22, X, Y, MT)",
+                _NON_PRIMARY_REASON
+                if by_design
+                else "MANE Select transcript on an unrecognised chromosome accession",
                 f"{hgnc} {nuc} on {nc}",
-                failure=False,
+                failure=not by_design,
             )
             continue
         txs.append(
@@ -566,6 +601,12 @@ def build(
                 "this recipe packages MANE v1.5 and GRCh38.p14 only"
             )
     built = read_rows(summary, gtf, rna, protein, genome)
+    # InputCounts forbids extra manifest keys, so the operator sees these on stdout.
+    print(
+        f"mane_select: {len(built.transcripts)} transcripts, {len(built.exons)} exons; "
+        f"{built.flank_n} flank bases already N, {built.flank_iupac} flank IUPAC codes "
+        "rewritten to N"
+    )
     source = load_source(HERE / "source.yaml")
     stamped = retrieved_on.isoformat()
     transcripts: list[Sequence[str | None]] = list(built.transcripts)

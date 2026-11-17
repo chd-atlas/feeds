@@ -4,9 +4,9 @@ MANE v1.5 Select transcripts and their exons, cut +-50 bp from GRCh38.p14, as th
 `mane_select` package: tables `mane_transcripts` v1 (one row per gene: transcript and
 protein sequence, `cds_start`, `cds_end`) and `mane_exons` v1 (one row per exon: transcript
 and genomic coordinates, and the forward-strand genome window of the exon plus 50 bases
-either side). `ids: hgnc_id`, `coverage: every_gene`, version `1.5`. Licence: NCBI states no
-restrictions on use or distribution; recorded as `permitted_with_attribution` (see
-`source.yaml`).
+either side). `ids: hgnc_id`, `coverage: every_gene`, version `1.5`. Licence: NCBI places no restrictions of its
+own but says it cannot give unrestricted permission, because submitters may claim rights;
+recorded as `permitted_with_attribution` (see `source.yaml`).
 
 The package is the "frame" the atlas reads variants against. The atlas checks it itself
 (MAN001: the exon cores, joined, are the transcript; MAN002: the coding sequence translates
@@ -71,17 +71,27 @@ chromosome at a time (only the chromosomes the summary names are kept in memory)
   are cumulated from 1.
 * **`cds_start` / `cds_end`**: the transcript position of the first `CDS` base, and of the
   last `CDS` base plus 3 (the GTF `CDS` excludes the stop codon). `start_codon` /
-  `stop_codon` features are not used: measured, the GTF has 19,400 `start_codon` and
-  19,388 `stop_codon` features for 19,437 transcripts, so they are neither one per
-  transcript nor always whole (a codon can be split by an intron).
+  `stop_codon` features are not used. Measured: the GTF's 19,400 `start_codon` and 19,388
+  `stop_codon` features include 76 / 77 for MANE Plus Clinical transcripts; the Select
+  transcripts have 19,324 / 19,311 (none for the 70 `NR_` ones). All 19,291 coding Select
+  transcripts in the GTF have both, but 33 start codons and 20 stop codons are split across
+  exons (two features each), so the features need joining and the CDS does not. For all
+  19,179 kept transcripts, bounds re-derived from the codon features (first base of the
+  start codon, last base of the stop codon, splits joined) equal the CDS-derived ones: the
+  real-file test checks it.
 * **Windows** are `[genomic_start - 50, genomic_end + 50]` clipped to the chromosome;
   `window_start` / `window_end` are the truth, never a fixed 50. Soft-masked bases are
   upper-cased.
 * **Ambiguity codes** in a flank are written as `N`; one inside an exon core would drop the
   transcript (the transcript sequence is `ACGT` only).
 * More than 50 failures (`MAX_FAILURES`) raise `PackageRefused`: that many would mean the
-  parser is wrong, not MANE. Only genuine self-check failures count; the three by-design
-  exclusions below are listed in `dropped` but do not count.
+  parser is wrong, not MANE. Three exclusions are by design, listed in `dropped` but not
+  counted: an `NR_` accession, a blank HGNC cell, an `NT_`/`NW_` chromosome accession.
+  Everything else that is dropped (any other accession, a malformed HGNC id or chromosome
+  accession, a short summary row, a missing exon, a missing sequence, a self-check
+  failure) counts.
+* `build` prints the flank counts (`N` already in the genome; IUPAC codes rewritten to `N`)
+  on stdout, because the manifest's `input_counts` forbids extra keys.
 
 ## Measurements (real build, 2026-11-17, workstation, pinned inputs)
 
@@ -91,12 +101,18 @@ Method: `recipe.read_rows` over `local/mane/`, and `recipe.build` into a scratch
 * 19,363 `MANE Select` rows read (`input_counts.rows`); **19,179 transcripts and 201,933
   exons kept**; 184 listed in `dropped`:
   * 70: non-coding (`NR_`) MANE Select transcripts, which have no protein;
-  * 52: `NM_` transcripts of genes with a blank `HGNC_ID` in the summary (`LOC...` genes);
-  * 61: transcripts the summary places on a non-primary accession (`NT_`, `NW_`);
+  * 52: `NM_` transcripts of genes with a blank `HGNC_ID` in the summary (50 `LOC...` genes,
+    plus TARP and MIURF);
+  * 61: transcripts the summary places on an `NT_` (17) or `NW_` (44) accession. The positions
+    are exact: every GTF seqname they use is an `*_alt` (27) or `*_fix` (32) scaffold (2 of
+    the 61 have no MANE Select feature in the GTF), none `_random` or `chrUn_`. They are
+    dropped because the atlas's chromosome vocabulary is the primary assembly's (1-22, X,
+    Y, MT); SHANK3, POLR2A, ABO and ORAI1 are among them;
   * 1: `HGNC:42967` `NM_001424184.1` (TMEM247), MAN002 `cds length 659 is not a multiple of
     3`. Its GTF `CDS` features are annotated `exception "annotated by transcript or
-    proteomic data"` and their lengths sum to 656 bases plus the 3-base stop. The exons do
-    reproduce the RNA sequence (MAN001 passes). It is dropped, never repaired.
+    proteomic data"` and their lengths sum to 656 bases plus the 3-base stop. The GTF's note
+    for it reads "stop codon completed by the addition of 3' A residue to the mRNA". The
+    exons do reproduce the RNA sequence (MAN001 passes). It is dropped, never repaired.
 * Every one of the atlas's 186 registry genes (`mirrors/genes.tsv`, atlas 2850343) is in the
   package, and every registry `mane_select` equals the package's transcript (MAN003 and MAN004
   would report nothing).
@@ -117,12 +133,14 @@ Method: `recipe.read_rows` over `local/mane/`, and `recipe.build` into a scratch
 
 `scripts/drift.py` probes `current/README_versions.txt` on NCBI's FTP (`FilesSource`;
 sha256 and size, baseline `drift.json`, captured 2026-11-17 and equal to the release-1.5
-file). It reports the day MANE publishes a newer release; it does not re-read the pinned
-files.
+file). It changes when NCBI publishes a newer release, which the weekly job reports at its
+next Monday run; it does not re-read the pinned files.
 
 ## Tests
 
 `pytest sources/mane_select`: a synthetic genome and four synthetic MANE files, no network.
 `test_the_real_v1_5_files_build_when_present` needs `local/mane/` and `FEEDS_REAL=1` (about
-70 s) and skips otherwise; it asserts the counts above, TBX5 `NM_181486.4` on `-` with
+70 s) and skips otherwise; it asserts: 19,363 rows read, 19,179 transcripts, the exact reason-to-count mapping of
+`dropped` (1, 70, 52, 61), 201,933 exon rows, the flank counts (1 N, 0 IUPAC), the
+codon-feature check above, TBX5 `NM_181486.4` on `-` with
 `cds_start` 556 and residue 279 `R`, and NR2F2 `NM_021005.4` with `cds_start` 1407.
