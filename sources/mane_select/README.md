@@ -123,7 +123,7 @@ Method: `recipe.read_rows` over `local/mane/`, and `recipe.build` into a scratch
 * `read_rows` took 68 s and `build` took 208 s (3 min 28 s) in all, peak memory
   1.1 GB (it hashes the five inputs and validates every cell against the vendored schemas).
 * Package: `mane_transcripts` 19,179 rows over 19,179 genes (28,964,465 bytes gzipped),
-  `mane_exons` 201,933 rows over 19,179 genes (31,820,381 bytes), `manifest.json` 4,926 bytes.
+  `mane_exons` 201,933 rows over 19,179 genes (31,820,381 bytes), `manifest.json` 5,278 bytes.
 * Cross-check with the atlas's own code, read-only: the two tables, un-gzipped into a scratch
   `mirrors/` beside the atlas's `mirrors/genes.tsv` (atlas 2850343), went through the atlas's
   `read_mane_frame` and `validate_mane`: 19,179 transcripts read, 0 read issues, 0
